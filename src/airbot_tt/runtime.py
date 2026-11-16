@@ -39,7 +39,7 @@ class _InertialUrdfConverter(UrdfConverter):
         return config
 
 
-def _articulation_config(model):
+def _articulation_config(model, base_position=BASE_POSITION, initial=HOME):
     manager = omni.kit.app.get_app().get_extension_manager()
     pinned = f"{URDF_IMPORTER}-{URDF_IMPORTER_VERSION}"
     enabled = manager.get_enabled_extension_id(URDF_IMPORTER)
@@ -75,7 +75,7 @@ def _articulation_config(model):
             ),
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=BASE_POSITION, joint_pos=dict(zip(model.joint_names, HOME, strict=True)),
+            pos=base_position, joint_pos=dict(zip(model.joint_names, initial, strict=True)),
             joint_vel={".*": 0.0},
         ),
         soft_joint_pos_limit_factor=1.0,
@@ -95,15 +95,24 @@ class AirbotSimulation:
 
     dt = DT
 
-    def __init__(self, device="cpu", obstacles=(), *, render=False, allow_initial_contact=False, model=None):
+    def __init__(self, device="cpu", obstacles=(), *, render=False, allow_initial_contact=False, model=None,
+                 base_position=BASE_POSITION, initial=HOME, task_scene=None, dt=DT):
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError("Physics timestep must be positive and finite.")
+        self.dt = float(dt)
         self.model = Kinematics(URDF) if model is None else model
-        self.checker = CollisionChecker(self.model, obstacles)
-        self.initial = self.model.validate(HOME).copy()
+        self.checker = CollisionChecker(self.model, obstacles, base_position=base_position)
+        self.initial = self.model.validate(initial).copy()
+        self.task_scene = task_scene
         self._allow_initial_contact = allow_initial_contact
         if not allow_initial_contact:
             self.checker.require_clear(self.initial)
 
-        self.sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=DT, device=device))
+        sim_cfg = sim_utils.SimulationCfg(dt=self.dt, device=device)
+        if task_scene is not None:
+            sim_cfg.physx.enable_ccd = True
+            sim_cfg.physx.bounce_threshold_velocity = 0.01
+        self.sim = sim_utils.SimulationContext(sim_cfg)
         self.sim.set_camera_view((1.10, 0.88, 0.70), (0.0, 0.0, 0.36))
         ground = sim_utils.CuboidCfg(
             size=(20.0, 20.0, 0.10), collision_props=sim_utils.CollisionPropertiesCfg(),
@@ -118,7 +127,7 @@ class AirbotSimulation:
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.72, 0.25, 0.08)),
             )
             cfg.func(f"/World/Obstacle{index}", cfg, translation=box.center_m)
-        self.robot = Articulation(_articulation_config(self.model))
+        self.robot = Articulation(_articulation_config(self.model, base_position, initial))
         if self.model.has_racket:
             stage = omni.usd.get_context().get_stage()
             # The importer instances mesh groups even when the top-level asset isn't
@@ -145,6 +154,8 @@ class AirbotSimulation:
         self.sensor = ContactSensor(ContactSensorCfg(
             prim_path=f"{ROBOT_PRIM}/(base_link|link[1-6]|fixer|paddle)", update_period=0.0,
         ))
+        if self.task_scene is not None:
+            self.task_scene.build(self)
         self.sim.reset()
         self.indices, names = self.robot.find_joints(list(self.model.joint_names), preserve_order=True)
         if self.robot.num_joints != 6 or tuple(names) != tuple(self.model.joint_names) or not self.robot.is_fixed_base:
@@ -221,7 +232,7 @@ class AirbotSimulation:
         self.robot.reset()
         self.sensor.reset()
         self._drive(self.target, self.target_velocity)
-        self.robot.update(DT)
+        self.robot.update(self.dt)
 
     def stop(self, reason="operator stop"):
         self.trajectory = None
@@ -245,7 +256,7 @@ class AirbotSimulation:
     def _start(self, path):
         self.trajectory = path
         self.elapsed = 0.0
-        self._trace_stride = max(1, math.ceil(path.duration / (DT * (MAX_TRACE_SAMPLES - 1))))
+        self._trace_stride = max(1, math.ceil(path.duration / (self.dt * (MAX_TRACE_SAMPLES - 1))))
         self._trace_step = 0
         self.last_trace = []
         return {"duration_s": path.duration, "checked_samples": path.checked_samples}
@@ -324,14 +335,16 @@ class AirbotSimulation:
         reference = self.trajectory
         if reference is not None:
             self._trace_step += 1
-            self.elapsed = min(self.elapsed + DT, reference.duration)
+            self.elapsed = min(self.elapsed + self.dt, reference.duration)
             self.target, self.target_velocity, self.target_acceleration = reference.sample(self.elapsed)
             if self.elapsed >= reference.duration:
                 self.trajectory = None
         self._drive(self.target, self.target_velocity)
+        if self.task_scene is not None:
+            self.task_scene.prepare_step()
         self.sim.step(render=render)
-        self.robot.update(DT)
-        self.sensor.update(DT)
+        self.robot.update(self.dt)
+        self.sensor.update(self.dt)
         self.tick += 1
         q, qd = self.q(), self.qd()
         if not np.isfinite([q, qd]).all():
@@ -339,6 +352,8 @@ class AirbotSimulation:
             self.fault = "non-finite joint feedback"
             raise RuntimeError(self.fault)
         _, forces = self.sim_contact()
+        if self.task_scene is not None:
+            forces = self.task_scene.after_step(self, forces)
         if not np.isfinite(forces).all():
             self.stop("non-finite contact feedback")
             raise RuntimeError(self.fault)

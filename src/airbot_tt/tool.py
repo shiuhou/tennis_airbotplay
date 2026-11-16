@@ -46,11 +46,16 @@ def racket_model(profile_path):
         ET.SubElement(inertial, 'inertia', **{key: str(tensor[i, j]) for key, i, j in
                       [('ixx', 0, 0), ('ixy', 0, 1), ('ixz', 0, 2), ('iyy', 1, 1), ('iyz', 1, 2), ('izz', 2, 2)]})
         for kind in ('visual', 'collision'):
-            element = ET.SubElement(link, kind)
-            ET.SubElement(ET.SubElement(element, 'geometry'), 'mesh', filename=str(mesh))
-            if kind == 'visual':
-                material = ET.SubElement(element, 'material', name=name+'_material')
-                ET.SubElement(material, 'color', rgba='0.1 0.55 0.6 1' if name == 'fixer' else '0.95 0.5 0.1 1')
+            parts = data.get('collision_parts', [data]) if kind == 'collision' else [data]
+            for part in parts:
+                part_mesh = ROOT/part['mesh']
+                if _hash(part_mesh) != part['sha256']:
+                    raise ValueError(f'{name} collision mesh does not match metadata.')
+                element = ET.SubElement(link, kind)
+                ET.SubElement(ET.SubElement(element, 'geometry'), 'mesh', filename=str(part_mesh))
+                if kind == 'visual':
+                    material = ET.SubElement(element, 'material', name=name+'_material')
+                    ET.SubElement(material, 'color', rgba='0.1 0.55 0.6 1' if name == 'fixer' else '0.95 0.5 0.1 1')
         joint = ET.SubElement(xml, 'joint', name=f'{name}_mount', type='fixed')
         ET.SubElement(joint, 'parent', link='link6' if name == 'fixer' else 'fixer')
         ET.SubElement(joint, 'child', link=name)

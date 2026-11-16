@@ -41,20 +41,24 @@ def _parse_obstacles(items):
     return boxes
 
 
-def _stl_points(path):
+def stl_triangles(path):
+    """Read the source triangle surface without replacing it by a convex hull."""
     data = path.read_bytes()
     if len(data) >= 84:
         count = struct.unpack_from("<I", data, 80)[0]
         if count and len(data) == 84 + 50 * count:
             dtype = np.dtype([("normal", "<f4", 3), ("vertices", "<f4", (3, 3)), ("attribute", "<u2")])
             triangles = np.frombuffer(data, dtype=dtype, count=count, offset=84)
-            return np.unique(triangles["vertices"].reshape(-1, 3).astype(float), axis=0)
+            return triangles["vertices"].astype(float)
     if data.startswith(b"solid"):
-        return np.unique(
-            np.array([line.split()[1:] for line in data.splitlines() if line.lstrip().startswith(b"vertex ")], dtype=float),
-            axis=0,
-        )
+        vertices = np.array([line.split()[1:] for line in data.splitlines() if line.lstrip().startswith(b"vertex ")], dtype=float)
+        if vertices.ndim == 2 and vertices.shape[1] == 3 and len(vertices) > 0 and len(vertices) % 3 == 0:
+            return vertices.reshape(-1, 3, 3)
     raise ValueError(f"Invalid collision STL: {path}")
+
+
+def _stl_points(path):
+    return np.unique(stl_triangles(path).reshape(-1, 3), axis=0)
 
 
 @dataclass(frozen=True)
@@ -92,9 +96,15 @@ class _Hull:
 class CollisionChecker:
     """Check ground and boxes in world, and non-adjacent links within the arm."""
 
-    def __init__(self, model, obstacles=()):
+    def __init__(self, model, obstacles=(), *, base_position=BASE_POSITION, base_mount_obstacle=None):
         self.model = model
+        self.base_position = np.asarray(base_position, dtype=float)
+        if self.base_position.shape != (3,) or not np.isfinite(self.base_position).all():
+            raise ValueError('Base position must be a finite three-vector.')
         self.obstacles = _parse_obstacles(obstacles)
+        self.base_mount_obstacle = base_mount_obstacle
+        if base_mount_obstacle is not None and base_mount_obstacle not in {box.name for box in self.obstacles}:
+            raise ValueError('Base mount must name an existing obstacle.')
         self._boxes = [_Hull.from_points(BOX_CORNERS * box.size_m + box.center_m) for box in self.obstacles]
         self._shapes = []
         self._excluded = {frozenset((f"link{i}", f"link{i+1}")) for i in range(1, 6)}
@@ -125,13 +135,16 @@ class CollisionChecker:
         groups = []
         for shapes, frame in zip(self._shapes, self.model.frames(q), strict=True):
             world = frame.copy()
-            world[:3, 3] += BASE_POSITION
+            world[:3, 3] += self.base_position
             groups.append([shape.transform(world) for shape in shapes])
         pairs = []
         for index, (name, shapes) in enumerate(zip(self.model.links, groups, strict=True)):
             if any(shape.points[:, 2].min() <= CLEARANCE_M for shape in shapes):
                 pairs.append((name, "ground"))
             for box, hull in zip(self.obstacles, self._boxes, strict=True):
+                # Only the fixed base/support interface is intentional contact.
+                if name == 'base_link' and box.name == self.base_mount_obstacle:
+                    continue
                 if any(shape.overlaps(hull) for shape in shapes):
                     pairs.append((name, box.name))
             for other in range(index + 1, len(groups)):

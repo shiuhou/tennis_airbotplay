@@ -17,6 +17,17 @@ from airbot_tt.trajectory import Trajectory
 
 
 class RacketTests(unittest.TestCase):
+    def test_blade_collision_preserves_striking_plane(self):
+        from airbot_tt.collision import stl_triangles
+        model = self.model
+        parts = model.tool_geometry['components']['paddle']['collision_parts']
+        self.assertEqual(len(model.xml.findall("link[@name='paddle']/collision")), 2)
+        blade = stl_triangles(ROOT/parts[1]['mesh']).reshape(-1,3)
+        heights = (blade-model.link6_tcp[:3,3]) @ model.link6_tcp[:3,2]
+        self.assertLess(abs(heights.max()), 1e-7)
+        self.assertGreater(heights.min(), -.014)
+        self.assertTrue(np.any(abs(heights)<1e-7))
+
     @classmethod
     def setUpClass(cls):
         cls.model = racket_model(ROOT/'configs/racket.json')

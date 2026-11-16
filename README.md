@@ -2,6 +2,8 @@
 
 AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
+過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes.md)。
+
 ## 啟動
 
 需要 Linux、NVIDIA GPU 驅動、Docker、NVIDIA Container Toolkit 和本機的固定映像。此工程使用既有的 Isaac Lab 2.1.0／Isaac Sim 4.5 映像。啟動時由手臂 URDF 產生本地 USD。首次轉換可能需要 NVIDIA Kit extension registry。第一次錄影會建立 RTX 著色器快取。
@@ -59,7 +61,7 @@ quit
 
 CadQuery 2.8.0／OCP 7.9.3.1 驗證三個 Ø4.20 mm 孔對準 J6 的 Ø24.30 mm 孔心圓，安裝面貼合，三個有效實體兩兩交集體積為零。後方套筒已移除；依官方 link5 網格的連續 360° 軸向支撐界，fixer 與 link5 名義淨空至少 0.946981 mm。球拍柄尾接觸面積 489.21 mm²，應先固定 fixer 再插入球拍。
 
-J6 的 Ø4.00 mm 孔徑及 4.00 mm 孔深僅為 STL 參考，實物螺紋、鎖固、加工公差與強度尚未確認。CAD 配合結果與工具物理模型的限制見下節。
+J6 的 Ø4.00 mm 孔徑及 4.00 mm 孔深僅為 STL 參考，使用者已確認真機鎖固；實物螺紋、加工公差與強度尚未獨立驗證。CAD 配合結果與工具物理模型的限制見下節。
 
 ## 固定件與球拍的物理仿真
 
@@ -75,8 +77,41 @@ J6 的 Ø4.00 mm 孔徑及 4.00 mm 孔深僅為 STL 參考，實物螺紋、鎖�
 
 `fk`、`ik`、`move_pose`、`jacobian` 與 `state` 的 TCP 改為 `paddle/RacketTCP`：朝 link6 +Y 的拍面幾何面積中心，X 沿柄向拍頭，Z 朝該面外法線，Y=Z×X。其在 link6 的位置約為 (−0.212542, 7.352473, 271.280851) mm；精確變換見 [幾何資料](assets/derived/racket/geometry.json)。flange 座標仍可獨立讀取。TCP 回饋來自實際 paddle 剛體。
 
-碰撞採每個工具的單一保守凸包，空腔也視為實體；預檢是離散採樣，不能據此宣稱所有連續軌跡皆無碰撞。link5／fixer 的規劃裕量為 0.5 mm，其餘檢查配對仍為 1 mm；工具模式 contact offset 為 0.2 mm、rest offset 為 0。鎖固接觸對由固定關節排除，其餘工具與手臂、地面及障礙物均納入檢查。
+fixer 碰撞採單一凸包，球拍採拍柄與拍頭兩個凸包，空腔也視為實體；預檢是離散採樣，不能據此宣稱所有連續軌跡皆無碰撞。link5／fixer 的規劃裕量為 0.5 mm，其餘檢查配對仍為 1 mm；工具模式 contact offset 為 0.2 mm、rest offset 為 0。鎖固接觸對由固定關節排除，其餘工具與手臂、地面及障礙物均納入檢查。
 
 完整工具驗證入口會執行數值測試、含載荷的 FK／IK／Trajectory／Collision、球拍與固定件各自的 PhysX 接觸測試，以及實際渲染影片與解碼驗證。證據預設寫入 `.agents/runs/foundation/racket/`，與裸臂證據分開。
 
-若 CAD 裝配變更，在已安裝 CadQuery 2.8／OCP 7.9、NumPy、SciPy 的 Python 環境執行 `python scripts/build_racket_assets.py` 重新產生 SI STL、COM、每公斤慣量與 TCP，再核對載荷設定及重新驗證。正常仿真只讀取生成資產，不依賴 CadQuery。真機、實物螺紋／鎖固／強度與擊球彈性未驗證。
+若 CAD 裝配變更，在已安裝 CadQuery 2.8／OCP 7.9、NumPy、SciPy 的 Python 環境執行 `python scripts/build_racket_assets.py` 重新產生 SI STL、COM、每公斤慣量與 TCP，再核對載荷設定及重新驗證。正常仿真只讀取生成資產，不依賴 CadQuery。仿真依使用者確認採理想鎖固；真機擊球、實物螺紋／強度與擊球彈性未驗證。
+
+## 球物理驗證
+
+```bash
+./verify_ball.sh
+```
+
+此入口建立獨立的球桌／球網／固定 CAD 拍面場景，依序檢查重力飛行、二次阻力、桌面反彈、拍面撞擊、球網與桌緣、重現性，以及三種物理步長的收斂。每種步長使用全新 PhysX 程序，結果寫入 `.agents/runs/foundation/ball/dt_240.json`、`dt_480.json`、`dt_960.json`，總判定為 `convergence.json`；只有完整測試與程序退出均成功才返回 0。單獨診斷可用 `./run.sh --headless --mode ball --ball-hz 240`，它只驗證單一頻率，不代表收斂通過。
+
+使用 [球參數](configs/ball.json) 的 40 mm／2.7 g 零旋球與未標定接觸係數。固定拍面使用原 CAD 三角面；可用 `--mode ball --ball-collision compound` 檢查可動球拍的兩塊凸包。模型假設及驗收見 [SPEC](.agents/docs/SPEC.md) 和 [DESIGN](.agents/docs/DESIGN.md)。
+
+## 單拍場景與驗證（M3）
+
+```bash
+./run.sh --unit
+./run.sh --headless --mode shot
+```
+
+機械臂、固定球拍、桌、網與球共用物理場景。底座直接鎖在己方桌端中軸線的桌面上，原點 (−1.275,0,0.760) m，底座後緣距桌端約10.77 mm；這是仿真安裝設定，尚非實物安裝孔測量值。入口依 [單拍設定](configs/single_shot.json) 重複四組發球，檢查接觸、成敗、重置、限時可達性及正常步進沒有直接寫入狀態，報告在 `.agents/runs/foundation/shot.json`。
+
+目前三組來球能碰到預先就位的球拍，一組太偏而漏接；保持球拍的三組接球均落回己方，因此合法回球為 0/4。這是任務與判定驗證，不是主動回球策略。軌跡預測已接入（見下節），下一步為擊球速度與回球規劃。
+
+## 球軌跡預測（M4）
+
+```bash
+./run.sh --unit
+./run.sh --headless --mode prediction
+./run.sh --headless --mode shot
+```
+
+預測反彈、最高點、過網、落點的時間和球心位置，並辨認撞網／桌外落點。`prediction` 跑24組固定物理比對，報告為 `.agents/runs/foundation/prediction.json`；`shot` 同時檢查桌上機械臂場景的碰拍前和實測碰拍後預測。門檻為每類事件P95位置20mm、時間10ms。單拍與預測驗收採480Hz；基礎手臂模式維持240Hz。
+
+Python 入口為 `airbot_tt.prediction.predict_ball(state)`；`state` 是世界座標的 `[x,y,z,vx,vy,vz]`。測到碰拍後傳入新狀態並指定 `first_table_event='landing'`。目前採零旋與未標定係數；擦桌緣／網頂回報不支援，未來球拍撞擊須由後續規劃提供。
