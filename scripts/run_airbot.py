@@ -92,14 +92,18 @@ def dispatch(args, app):
     from airbot_tt.kinematics import Kinematics
     from airbot_tt.runtime import AirbotSimulation, URDF_IMPORTER_VERSION
 
-    model = Kinematics()
+    if args.tool_config:
+        from airbot_tt.tool import racket_model
+        model = racket_model(args.tool_config)
+    else:
+        model = Kinematics()
     obstacles = json.loads(Path(args.obstacles).read_text()) if args.obstacles else ()
     if args.mode == "verify":
         from foundation import verify_obstacles
         obstacles = verify_obstacles(model)
     if args.mode == "contact":
         from foundation import contact_obstacles
-        obstacles = contact_obstacles(model)
+        obstacles = contact_obstacles(model, args.contact_body)
     control = AirbotSimulation(device=args.device or "cpu", obstacles=obstacles, render=args.mode == "demo",
                                allow_initial_contact=args.mode == "contact", model=model)
     if args.mode == "verify":
@@ -107,7 +111,7 @@ def dispatch(args, app):
         result = verify(control)
     elif args.mode == "contact":
         from foundation import contact
-        result = contact(control)
+        result = contact(control, args.contact_body)
     elif args.mode == "demo":
         from airbot_tt.recording import record
         result = record(control, Path(args.video))
@@ -126,6 +130,9 @@ def dispatch(args, app):
         "python": platform.python_version(), "numpy": numpy.__version__, "scipy": scipy.__version__,
         "urdf_importer": URDF_IMPORTER_VERSION, "dt_s": control.dt, "device": str(control.robot.device),
     })
+    if model.has_racket:
+        result["tool_profile"] = model.tool_profile
+        result["tool_geometry"] = model.tool_geometry
     return result
 
 
@@ -134,6 +141,8 @@ def main():
     parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive"], default="interactive")
     parser.add_argument("--report")
     parser.add_argument("--obstacles")
+    parser.add_argument("--tool-config", help="Confirmed racket mass/distribution profile JSON")
+    parser.add_argument("--contact-body", choices=["fixer", "paddle"], help="Tool body for isolated contact acceptance")
     parser.add_argument("--video", default=str(RUNS / "airbot_play.mp4"))
     token = os.environ.get("AIRBOT_RUN_TOKEN")
     if sys.argv[1:2] == ["--check-completion"]:
@@ -161,6 +170,8 @@ def main():
     args.enable_cameras = args.enable_cameras or args.mode == "demo"
     if args.mode in ("verify", "contact") and args.obstacles:
         parser.error("Acceptance modes supply their own test obstacles.")
+    if args.contact_body and (args.mode != "contact" or not args.tool_config):
+        parser.error("--contact-body requires --mode contact and --tool-config.")
     destination = report_path(args)
     report = {"run_token": token, "mode": args.mode, "status": "STARTING"}
     save_report(destination, report)

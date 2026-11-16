@@ -7,7 +7,7 @@ import math
 import numpy as np
 
 from airbot_tt.config import BASE_POSITION, COMMAND_ACCELERATION, COMMAND_SPEED, CONTACT_TRIP_N, HOME
-from airbot_tt.kinematics import pose_error, pose_matrix
+from airbot_tt.kinematics import origin, pose_error, pose_matrix
 
 GROUND_POSE = [0, -2.0, 0.5, 0, 0, 0]
 SELF_POSE = [-0.89100636, -2.01577966, -0.06824791, 1.54435886, -1.48929816, -0.06011115]
@@ -55,7 +55,10 @@ def verify_obstacles(model):
     return _overlap_box(model, 1.35, "path_block")
 
 
-def contact_obstacles(model):
+def contact_obstacles(model, body=None):
+    if model.has_racket:
+        center = (model.frames(HOME)[6] @ [0.021, 0.0, 0.110667, 1.0])[:3] + BASE_POSITION if body == "fixer" else model.fk(HOME)[:3, 3] + BASE_POSITION
+        return [{"name": "contact_fixture", "center_m": center.tolist(), "size_m": [0.025]*3}]
     return _overlap_box(model, 0.0, "contact_fixture")
 
 
@@ -97,6 +100,13 @@ def _verify_inertia(model, robot, report):
             float(values[key]) for key in ("ixx", "ixy", "ixz", "iyy", "iyz", "izz")
         )
         moment = np.linalg.eigvalsh([[ixx, ixy, ixz], [ixy, iyy, iyz], [ixz, iyz, izz]])
+        # This pinned articulation API returns a full tensor in link axes.
+        # get_coms also carries the principal-axis quaternion; applying it here
+        # would rotate the tensor a second time.
+        actual_tensor = tensors[index]
+        urdf_rotation = origin(inertial.find("origin"))[:3, :3]
+        expected_tensor = urdf_rotation @ np.array([[ixx, ixy, ixz], [ixy, iyy, iyz], [ixz, iyz, izz]]) @ urdf_rotation.T
+        np.testing.assert_allclose(actual_tensor, expected_tensor, rtol=3e-4, atol=1e-8)
         expected_masses.append(mass)
         expected_coms.append(com)
         expected_moments.append(moment)
@@ -107,6 +117,7 @@ def _verify_inertia(model, robot, report):
             "urdf_center_of_mass_link_m": com.tolist(),
             "principal_moments_kg_m2": moments[index].tolist(),
             "urdf_principal_moments_kg_m2": moment.tolist(),
+            "inertia_tensor_link_kg_m2": actual_tensor.tolist(),
         }
     report["physx_link_dynamics"] = dynamics
     np.testing.assert_allclose(masses, expected_masses, rtol=1e-6, atol=1e-7)
@@ -180,8 +191,13 @@ def verify(control):
             measured_wrist = np.linalg.solve(base, wrist)
             observed_flange = measured_wrist @ model.flange_transform
             np.testing.assert_allclose(_pose(state["flange_base"]), observed_flange, atol=2e-6)
-            np.testing.assert_allclose(_pose(state["tcp_base"]), observed_flange, atol=2e-6)
-            error = pose_error(model.fk(q), observed_flange)
+            observed_tcp = observed_flange @ model.tcp_transform
+            if model.has_racket:
+                paddle_id = control.robot.body_names.index("paddle")
+                paddle_state = control.robot.data.body_link_state_w[0, paddle_id, :7].cpu().numpy()
+                observed_tcp = np.linalg.solve(base, pose_matrix(paddle_state)) @ model.link6_tcp
+            np.testing.assert_allclose(_pose(state["tcp_base"]), observed_tcp, atol=2e-6)
+            error = pose_error(model.fk(q), observed_tcp)
             metrics["max_fk_position_error_m"] = max(
                 metrics["max_fk_position_error_m"], float(np.linalg.norm(error[:3]))
             )
@@ -201,7 +217,7 @@ def verify(control):
     with _check(report, "fixed_base_and_limits"):
         robot = control.robot
         base_id = robot.body_names.index(model.links[0])
-        wrist_id = robot.body_names.index(model.links[-1])
+        wrist_id = robot.body_names.index(model.tip_link)
         _require(robot.is_fixed_base, "Articulation base is not fixed.")
         _require(set(robot.body_names) == set(model.links), f"Articulation links: {robot.body_names}")
         _require(set(robot.joint_names) == set(model.joint_names), f"Articulation joints: {robot.joint_names}")
@@ -220,6 +236,30 @@ def verify(control):
 
     with _check(report, "urdf_mass_and_inertia"):
         _verify_inertia(model, robot, report)
+
+    if model.has_racket:
+        with _check(report, "tool_collision_and_tcp_frames"):
+            import omni.usd
+            from pxr import PhysxSchema, UsdGeom, UsdPhysics
+            from airbot_tt.config import RACKET_CONTACT_OFFSET_M
+            from airbot_tt.runtime import ROBOT_PRIM
+            stage = omni.usd.get_context().get_stage()
+            names, _ = control.sim_contact()
+            _require({"fixer", "paddle"} <= set(names), "Missing tool contact sensors.")
+            for body in ("fixer", "paddle"):
+                prim = stage.GetPrimAtPath(f"{ROBOT_PRIM}/{body}")
+                _require(prim.HasAPI(UsdPhysics.RigidBodyAPI), f"Missing rigid body {body}.")
+            for path in control.tool_colliders:
+                prim = stage.GetPrimAtPath(path)
+                _require(prim.HasAPI(UsdPhysics.CollisionAPI), f"Missing collider {path}.")
+                api = PhysxSchema.PhysxCollisionAPI(prim)
+                _require(abs(api.GetContactOffsetAttr().Get()-RACKET_CONTACT_OFFSET_M) < 1e-8,
+                         f"Wrong contact offset {path}.")
+                _require(api.GetRestOffsetAttr().Get() == 0.0, f"Wrong rest offset {path}.")
+            marker = UsdGeom.Xformable(stage.GetPrimAtPath(f"{ROBOT_PRIM}/paddle/RacketTCP"))
+            np.testing.assert_allclose(np.array(marker.GetLocalTransformation()).T, model.link6_tcp, atol=1e-10)
+            report["tool_collision_prims"] = control.tool_colliders
+            report["tool_mass_kg"] = sum(report["physx_link_dynamics"][body]["mass_kg"] for body in ("fixer", "paddle"))
 
     with _check(report, "six_axis_position"):
         report["axes"] = []
@@ -332,7 +372,9 @@ def verify(control):
             "out_of_bounds": _rejected(lambda: control.move_joint(excessive), "limit"),
             "nonfinite": _rejected(lambda: control.move_joint([np.nan] * 6), "finite"),
             "ground": _rejected(lambda: control.move_joint(GROUND_POSE), "ground"),
-            "self": _rejected(lambda: control.move_joint(SELF_POSE), "base_link"),
+            # A mounted paddle can hit ground before reaching the self-colliding endpoint.
+            # The endpoint's explicit base_link/link4 overlap is checked above.
+            "self": _rejected(lambda: control.move_joint(SELF_POSE), "collision"),
             "box_between_clear_waypoints": _rejected(
                 lambda: control.start_trajectory([clear_a, clear_b]), "path_block"
             ),
@@ -373,17 +415,18 @@ def verify(control):
     return report
 
 
-def contact(control):
+def contact(control, body=None):
     """In an isolated scene, measure box overlap through real PhysX contacts."""
     report = {
         "status": "RUNNING",
         "checks": {"physx_contact_and_fault_latch": "NOT_RUN"},
         "physics_dt_s": control.dt,
-        "scope": "Intentional wrist/box overlap at initialization",
+        "scope": "Intentional tool/box overlap" if control.model.has_racket else "Intentional wrist/box overlap at initialization",
     }
     with _check(report, "physx_contact_and_fault_latch"):
+        contact_body = (body or "paddle") if control.model.has_racket else "link6"
         _require(
-            ("link6", "contact_fixture") in control.checker.check(control.q()),
+            (contact_body, "contact_fixture") in control.checker.check(control.q()),
             "Contact test scene missed the initial wrist overlap.",
         )
         initial_writes = control.state_writes
@@ -395,12 +438,12 @@ def contact(control):
             forces = np.asarray(forces)
             _require(np.isfinite(forces).all(), f"Nonfinite contact forces: {forces}")
             magnitudes = np.linalg.norm(forces, axis=1)
-            wrist_force = max(wrist_force, float(magnitudes[list(names).index("link6")]))
+            wrist_force = max(wrist_force, float(magnitudes[list(names).index(contact_body)]))
             if float(magnitudes.max()) > maximum:
                 maximum = float(magnitudes.max())
                 report["peak_forces_world_N"] = dict(zip(names, forces.tolist(), strict=True))
         report["peak_contact_force_N"] = maximum
-        report["peak_link6_contact_force_N"] = wrist_force
+        report[f"peak_{contact_body}_contact_force_N"] = wrist_force
         report["fault"] = control.fault
         _require(maximum > CONTACT_TRIP_N, f"No significant physical contact measured: {maximum} N")
         _require(wrist_force > CONTACT_TRIP_N, f"No significant wrist contact measured: {wrist_force} N")

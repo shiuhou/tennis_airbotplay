@@ -8,7 +8,7 @@ import numpy as np
 from scipy.optimize import linprog
 from scipy.spatial import ConvexHull
 
-from .config import BASE_POSITION
+from .config import BASE_POSITION, RACKET_WRIST_CLEARANCE_M
 from .kinematics import origin
 
 CLEARANCE_M = 0.001
@@ -73,15 +73,15 @@ class _Hull:
         normals = self.planes[:, :3] @ rotation.T
         return _Hull(self.points @ rotation.T + shift, np.c_[normals, self.planes[:, 3] - normals @ shift])
 
-    def overlaps(self, other):
+    def overlaps(self, other, clearance=CLEARANCE_M):
         if (
-            np.any(self.points.max(0) + CLEARANCE_M < other.points.min(0))
-            or np.any(other.points.max(0) + CLEARANCE_M < self.points.min(0))
+            np.any(self.points.max(0) + clearance < other.points.min(0))
+            or np.any(other.points.max(0) + clearance < self.points.min(0))
         ):
             return False
         planes = np.vstack([self.planes, other.planes])
         result = linprog(
-            np.zeros(3), A_ub=planes[:, :3], b_ub=-planes[:, 3] + CLEARANCE_M / 2,
+            np.zeros(3), A_ub=planes[:, :3], b_ub=-planes[:, 3] + clearance / 2,
             bounds=[(None, None)] * 3, method="highs",
         )
         if result.status not in (0, 2):
@@ -97,6 +97,12 @@ class CollisionChecker:
         self.obstacles = _parse_obstacles(obstacles)
         self._boxes = [_Hull.from_points(BOX_CORNERS * box.size_m + box.center_m) for box in self.obstacles]
         self._shapes = []
+        self._excluded = {frozenset((f"link{i}", f"link{i+1}")) for i in range(1, 6)}
+        self._excluded.add(frozenset(("base_link", "link1")))
+        if model.has_racket:
+            # Reviewed rigid assembly: mounting and handle/stop interfaces.
+            self._excluded.update(frozenset(pair) for pair in
+                                  (("link6", "fixer"), ("fixer", "paddle")))
         for name in model.links:
             elements = model.xml.findall(f"link[@name='{name}']/collision")
             if not elements:
@@ -128,9 +134,14 @@ class CollisionChecker:
             for box, hull in zip(self.obstacles, self._boxes, strict=True):
                 if any(shape.overlaps(hull) for shape in shapes):
                     pairs.append((name, box.name))
-            # Adjacent links share their joint interface.
-            for other in range(index + 2, len(groups)):
-                if any(shape.overlaps(hull) for shape in shapes for hull in groups[other]):
+            for other in range(index + 1, len(groups)):
+                pair = frozenset((name, self.model.links[other]))
+                if pair in self._excluded:
+                    continue
+                # The reviewed link5/fixer seat has only 0.947 mm nominal separation.
+                # Keep 0.5 mm here; the general 1 mm planning margin stays unchanged.
+                clearance = RACKET_WRIST_CLEARANCE_M if pair == frozenset(("link5", "fixer")) else CLEARANCE_M
+                if any(shape.overlaps(hull, clearance) for shape in shapes for hull in groups[other]):
                     pairs.append((name, self.model.links[other]))
         return pairs
 

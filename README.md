@@ -1,6 +1,6 @@
 # AIRBOT Play · Isaac Lab
 
-AIRBOT Play 六軸固定底座裸臂。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
+AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
 ## 啟動
 
@@ -59,4 +59,24 @@ quit
 
 CadQuery 2.8.0／OCP 7.9.3.1 驗證三個 Ø4.20 mm 孔對準 J6 的 Ø24.30 mm 孔心圓，安裝面貼合，三個有效實體兩兩交集體積為零。後方套筒已移除；依官方 link5 網格的連續 360° 軸向支撐界，fixer 與 link5 名義淨空至少 0.946981 mm。球拍柄尾接觸面積 489.21 mm²，應先固定 fixer 再插入球拍。
 
-J6 的 Ø4.00 mm 孔徑及 4.00 mm 孔深僅為 STL 參考，實物螺紋、鎖固、加工公差與強度尚未確認。上述為 CAD 配合成果；仿真仍為裸臂物理模型。
+J6 的 Ø4.00 mm 孔徑及 4.00 mm 孔深僅為 STL 參考，實物螺紋、鎖固、加工公差與強度尚未確認。CAD 配合結果與工具物理模型的限制見下節。
+
+## 固定件與球拍的物理仿真
+
+使用 [已確認的載荷設定](configs/racket.json) 啟用工具，預設不帶參數仍為裸臂：
+
+```bash
+./run.sh --headless --mode state --tool-config configs/racket.json
+./run.sh --headless --tool-config configs/racket.json
+./verify.sh --tool-config configs/racket.json
+```
+
+工具模式保留六個驅動自由度，新增 fixer、paddle 兩個由固定關節連接的剛體，包含碰撞、質量、COM、慣量與接觸感測。固定件含螺絲 77 g、球拍 170 g，總載荷 247 g。質心與慣量採使用者同意的 CAD 均勻分布近似；螺絲合併到固定件分布，不代表實測球拍內部結構或列印填充。
+
+`fk`、`ik`、`move_pose`、`jacobian` 與 `state` 的 TCP 改為 `paddle/RacketTCP`：朝 link6 +Y 的拍面幾何面積中心，X 沿柄向拍頭，Z 朝該面外法線，Y=Z×X。其在 link6 的位置約為 (−0.212542, 7.352473, 271.280851) mm；精確變換見 [幾何資料](assets/derived/racket/geometry.json)。flange 座標仍可獨立讀取。TCP 回饋來自實際 paddle 剛體。
+
+碰撞採每個工具的單一保守凸包，空腔也視為實體；預檢是離散採樣，不能據此宣稱所有連續軌跡皆無碰撞。link5／fixer 的規劃裕量為 0.5 mm，其餘檢查配對仍為 1 mm；工具模式 contact offset 為 0.2 mm、rest offset 為 0。鎖固接觸對由固定關節排除，其餘工具與手臂、地面及障礙物均納入檢查。
+
+完整工具驗證入口會執行數值測試、含載荷的 FK／IK／Trajectory／Collision、球拍與固定件各自的 PhysX 接觸測試，以及實際渲染影片與解碼驗證。證據預設寫入 `.agents/runs/foundation/racket/`，與裸臂證據分開。
+
+若 CAD 裝配變更，在已安裝 CadQuery 2.8／OCP 7.9、NumPy、SciPy 的 Python 環境執行 `python scripts/build_racket_assets.py` 重新產生 SI STL、COM、每公斤慣量與 TCP，再核對載荷設定及重新驗證。正常仿真只讀取生成資產，不依賴 CadQuery。真機、實物螺紋／鎖固／強度與擊球彈性未驗證。

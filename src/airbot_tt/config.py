@@ -15,3 +15,6 @@ SIM_SPEED = 0.40
 DRIVE_STIFFNESS = (800.0, 800.0, 700.0, 450.0, 400.0, 350.0)
 DRIVE_DAMPING = (16.0, 16.0, 12.0, 6.0, 5.0, 5.0)
 CONTACT_TRIP_N = 5.0
+# Reviewed link5/fixer nominal separation is 0.946981 mm; other pairs retain 1 mm.
+RACKET_WRIST_CLEARANCE_M = 0.0005
+RACKET_CONTACT_OFFSET_M = 0.0002

@@ -80,7 +80,7 @@ def rigid_transform(value):
 
 
 class Kinematics:
-    """Seven physical links and the nominal flange / configurable TCP frames."""
+    """Six driven joints, optionally with a fixed fixer and paddle."""
 
     joint_names = JOINT_NAMES
     links = LINK_NAMES
@@ -92,16 +92,26 @@ class Kinematics:
         joint_elements = self.xml.findall("joint")
         joints = {joint.get("name"): joint for joint in joint_elements}
         link_elements = self.xml.findall("link")
+        self.has_racket = {link.get("name") for link in link_elements} == set(LINK_NAMES) | {"fixer", "paddle"}
+        self.links = LINK_NAMES + (("fixer", "paddle") if self.has_racket else ())
+        fixed = {"fixer_mount", "paddle_mount"} if self.has_racket else set()
         if (
-            set(joints) != set(self.joint_names)
-            or len(joint_elements) != 6
+            set(joints) != set(self.joint_names) | fixed
+            or len(joint_elements) != 6 + len(fixed)
             or {link.get("name") for link in link_elements} != set(self.links)
-            or len(link_elements) != 7
+            or len(link_elements) != len(self.links)
         ):
-            raise ValueError("Expected the six-joint bare AIRBOT Play URDF.")
+            raise ValueError("Expected AIRBOT Play with six driven joints and optional fixed racket.")
+        self._tool_origins = []
+        for name, parent, child in (("fixer_mount", "link6", "fixer"), ("paddle_mount", "fixer", "paddle")) if self.has_racket else ():
+            joint = joints[name]
+            if (joint.get("type") != "fixed" or joint.find("parent").get("link") != parent
+                    or joint.find("child").get("link") != child):
+                raise ValueError(f"Invalid fixed tool mount {name}.")
+            self._tool_origins.append(origin(joint.find("origin")))
 
         origins, axes, limits = [], [], []
-        for name, parent, child in zip(self.joint_names, self.links[:-1], self.links[1:]):
+        for name, parent, child in zip(self.joint_names, LINK_NAMES[:-1], LINK_NAMES[1:]):
             joint = joints[name]
             if (
                 joint.get("type") != "revolute"
@@ -157,17 +167,19 @@ class Kinematics:
             transform = frames[-1] @ zero
             transform[:3, :3] = transform[:3, :3] @ Rotation.from_rotvec(axis * angle).as_matrix()
             frames.append(transform)
+        for transform in self._tool_origins:
+            frames.append(frames[-1] @ transform)
         return frames
 
     def flange(self, q):
-        return self.frames(q)[-1] @ self.flange_transform
+        return self.frames(q)[6] @ self.flange_transform
 
     def fk(self, q):
         return self.flange(q) @ self.tcp_transform
 
     def jacobian(self, q):
         """Map joint rates into TCP linear and angular velocity in base_link."""
-        frames = self.frames(q)
+        frames = self.frames(q)[:7]
         tip_position = (frames[-1] @ self.flange_transform @ self.tcp_transform)[:3, 3]
         origins = np.array([transform[:3, 3] for transform in frames[1:]])
         axes = np.array([t[:3, :3] @ axis for t, axis in zip(frames[1:], self._axes)])

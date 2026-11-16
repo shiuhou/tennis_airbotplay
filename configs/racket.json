@@ -1,0 +1,9 @@
+{
+  "confirmed": true,
+  "confirmation_date": "2026-11-16",
+  "mass_kg": {"fixer": 0.077, "paddle": 0.170},
+  "mass_source": "User: fixer 65 g plus 8 screws totaling 12 g; paddle 170 g",
+  "distribution": "User-approved homogeneous CAD solids; screws lumped into fixer distribution",
+  "tcp": "User-approved positive-link6-Y striking face centroid, X toward blade, Z outward normal",
+  "scope": "Approximate simulation inertia and COM, not measured internal mass distribution"
+}

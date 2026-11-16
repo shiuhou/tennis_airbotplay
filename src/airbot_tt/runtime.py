@@ -5,7 +5,9 @@ import math
 
 import numpy as np
 import omni.kit.app
+import omni.usd
 import torch
+from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
@@ -18,7 +20,7 @@ from isaaclab.utils.math import combine_frame_transforms, subtract_frame_transfo
 from .collision import CollisionChecker
 from .config import (
     BASE_POSITION, CONTACT_TRIP_N, DRIVE_DAMPING,
-    DRIVE_STIFFNESS, DT, HOME, ROOT, SIM_SPEED, URDF,
+    DRIVE_STIFFNESS, DT, HOME, ROOT, SIM_SPEED, URDF, RACKET_CONTACT_OFFSET_M,
 )
 from .kinematics import Kinematics, pose_dict, pose_error, rigid_transform
 from .trajectory import Trajectory, VelocityTrajectory
@@ -50,7 +52,7 @@ def _articulation_config(model):
     converted = _InertialUrdfConverter(UrdfConverterCfg(
         asset_path=str(model.path),
         usd_dir=str(ROOT / ".agents/runs/foundation/usd"),
-        usd_file_name="airbot_play.usd",
+        usd_file_name="airbot_racket.usd" if model.has_racket else "airbot_play.usd",
         make_instanceable=False,
         fix_base=True,
         root_link_name=model.links[0],
@@ -117,15 +119,39 @@ class AirbotSimulation:
             )
             cfg.func(f"/World/Obstacle{index}", cfg, translation=box.center_m)
         self.robot = Articulation(_articulation_config(self.model))
+        if self.model.has_racket:
+            stage = omni.usd.get_context().get_stage()
+            # The importer instances mesh groups even when the top-level asset isn't
+            # instanceable. Make collider groups editable before setting actual offsets.
+            for name in self.model.links:
+                group = stage.GetPrimAtPath(f"{ROBOT_PRIM}/{name}/collisions")
+                if group.IsInstance():
+                    group.SetInstanceable(False)
+            self.tool_colliders = []
+            for prim in stage.Traverse():
+                if str(prim.GetPath()).startswith(ROBOT_PRIM+"/") and prim.HasAPI(UsdPhysics.CollisionAPI):
+                    collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+                    collision.CreateContactOffsetAttr(RACKET_CONTACT_OFFSET_M)
+                    collision.CreateRestOffsetAttr(0.0)
+                    self.tool_colliders.append(str(prim.GetPath()))
+            if not all(any(f"/{name}/collisions/" in p for p in self.tool_colliders) for name in ("fixer", "paddle")):
+                raise RuntimeError("Imported physical tool collision meshes are missing.")
+            # A named frame on the physical paddle, not an extra massless rigid body.
+            marker = UsdGeom.Xform.Define(stage, f"{ROBOT_PRIM}/paddle/RacketTCP")
+            pose = pose_dict(self.model.link6_tcp)
+            marker.AddTranslateOp().Set(Gf.Vec3d(*pose["position_m"]))
+            w, x, y, z = pose["quaternion_wxyz"]
+            marker.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(w, Gf.Vec3d(x, y, z)))
         self.sensor = ContactSensor(ContactSensorCfg(
-            prim_path=f"{ROBOT_PRIM}/(base_link|link[1-6])", update_period=0.0,
+            prim_path=f"{ROBOT_PRIM}/(base_link|link[1-6]|fixer|paddle)", update_period=0.0,
         ))
         self.sim.reset()
         self.indices, names = self.robot.find_joints(list(self.model.joint_names), preserve_order=True)
         if self.robot.num_joints != 6 or tuple(names) != tuple(self.model.joint_names) or not self.robot.is_fixed_base:
             raise RuntimeError(f"Expected six fixed-base arm joints, found {self.robot.joint_names}.")
         self.base = self.robot.body_names.index(self.model.links[0])
-        self.tip = self.robot.body_names.index(self.model.links[-1])
+        self.tip = self.robot.body_names.index(self.model.tip_link)
+        self.racket = self.robot.body_names.index("paddle") if self.model.has_racket else None
         self._data = self.robot.data
         self._dtype = self._data.joint_pos.dtype
         self._device = self._data.joint_pos.device
@@ -140,6 +166,8 @@ class AirbotSimulation:
         )
         self._flange_p, self._flange_r = self._pose_tensors(self.model.flange_transform)
         self._tcp_p, self._tcp_r = self._pose_tensors(self.model.tcp_transform)
+        if self.model.has_racket:
+            self._racket_p, self._racket_r = self._pose_tensors(self.model.link6_tcp)
         self.tick = 0
         self.state_writes = 0
         self.last_trace = []
@@ -336,6 +364,12 @@ class AirbotSimulation:
         tip_r = self._data.body_link_quat_w[:, self.tip]
         flange_p, flange_r = combine_frame_transforms(tip_p, tip_r, self._flange_p, self._flange_r)
         tcp_p, tcp_r = combine_frame_transforms(flange_p, flange_r, self._tcp_p, self._tcp_r)
+        if self.racket is not None:
+            # Read the live fixed-body pose so attachment drift is visible to FK acceptance.
+            tcp_p, tcp_r = combine_frame_transforms(
+                self._data.body_link_pos_w[:, self.racket], self._data.body_link_quat_w[:, self.racket],
+                self._racket_p, self._racket_r,
+            )
         flange_base = subtract_frame_transforms(base_p, base_r, flange_p, flange_r)
         tcp_base = subtract_frame_transforms(base_p, base_r, tcp_p, tcp_r)
 
@@ -352,6 +386,7 @@ class AirbotSimulation:
             "base_world": pose(base_p, base_r), "link6_world": pose(tip_p, tip_r),
             "flange_world": pose(flange_p, flange_r), "flange_base": pose(*flange_base),
             "tcp_world": pose(tcp_p, tcp_r), "tcp_base": pose(*tcp_base),
+            "tcp_frame": "RacketTCP" if self.model.has_racket else "flange",
             "contact_body_names": names, "contact_forces_N": forces.tolist(),
             "contact_max_N": float(np.max(np.linalg.norm(forces, axis=1))),
             "active": self.active, "fault": self.fault, "state_writes": self.state_writes,
