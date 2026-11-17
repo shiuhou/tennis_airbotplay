@@ -39,7 +39,7 @@ class _InertialUrdfConverter(UrdfConverter):
         return config
 
 
-def _articulation_config(model, base_position=BASE_POSITION, initial=HOME):
+def _articulation_config(model, base_position=BASE_POSITION, initial=HOME, speed_limit=SIM_SPEED):
     manager = omni.kit.app.get_app().get_extension_manager()
     pinned = f"{URDF_IMPORTER}-{URDF_IMPORTER_VERSION}"
     enabled = manager.get_enabled_extension_id(URDF_IMPORTER)
@@ -82,7 +82,7 @@ def _articulation_config(model, base_position=BASE_POSITION, initial=HOME):
         actuators={"arm": ImplicitActuatorCfg(
             joint_names_expr=["joint[1-6]"],
             effort_limit_sim=dict(zip(model.joint_names, model.effort, strict=True)),
-            velocity_limit_sim={name: min(SIM_SPEED, velocity) for name, velocity in
+            velocity_limit_sim={name: min(speed_limit, velocity) for name, velocity in
                                 zip(model.joint_names, model.velocity, strict=True)},
             stiffness=dict(zip(model.joint_names, DRIVE_STIFFNESS, strict=True)),
             damping=dict(zip(model.joint_names, DRIVE_DAMPING, strict=True)),
@@ -96,9 +96,12 @@ class AirbotSimulation:
     dt = DT
 
     def __init__(self, device="cpu", obstacles=(), *, render=False, allow_initial_contact=False, model=None,
-                 base_position=BASE_POSITION, initial=HOME, task_scene=None, dt=DT):
+                 base_position=BASE_POSITION, initial=HOME, task_scene=None, dt=DT, speed_limit=SIM_SPEED):
         if not math.isfinite(dt) or dt <= 0:
             raise ValueError("Physics timestep must be positive and finite.")
+        if not math.isfinite(speed_limit) or speed_limit <= 0:
+            raise ValueError("Simulation speed limit must be positive and finite.")
+        self.speed_limit = float(speed_limit)
         self.dt = float(dt)
         self.model = Kinematics(URDF) if model is None else model
         self.checker = CollisionChecker(self.model, obstacles, base_position=base_position)
@@ -127,7 +130,7 @@ class AirbotSimulation:
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.72, 0.25, 0.08)),
             )
             cfg.func(f"/World/Obstacle{index}", cfg, translation=box.center_m)
-        self.robot = Articulation(_articulation_config(self.model, base_position, initial))
+        self.robot = Articulation(_articulation_config(self.model, base_position, initial, self.speed_limit))
         if self.model.has_racket:
             stage = omni.usd.get_context().get_stage()
             # The importer instances mesh groups even when the top-level asset isn't
@@ -276,6 +279,34 @@ class AirbotSimulation:
                           durations=durations, require_clear=self.checker.require_clear)
         return self._start(path)
 
+    def start_strike(self, strike_q, strike_velocity, end_q, hit_time, recovery_time,
+                     *, vmax=0.15, amax=0.30):
+        """Timed passage with bounded command limits and per-instance speed cap."""
+        from .trajectory import StrikeTrajectory
+        if np.any(np.asarray(vmax) > self.speed_limit):
+            raise ValueError("Strike command exceeds configured simulation speed limit.")
+        path = StrikeTrajectory(self.model, self._ready_for_motion(), strike_q,
+                                strike_velocity, end_q, hit_time, recovery_time, vmax=vmax, amax=amax,
+                                require_clear=self.checker.require_clear)
+        return self._start(path)
+
+    def start_prepared_strike(self, path):
+        """Start a preflighted scripted strike from the same measured rest state.
+
+        Preparation occurs before serve launch. It is not an online planner;
+        changes in model/checker or initial posture invalidate the prepared path.
+        """
+        from .trajectory import StrikeTrajectory
+        seed = self._ready_for_motion()
+        if (not isinstance(path, StrikeTrajectory) or path.model is not self.model
+                or path.collision_check != self.checker.require_clear or path.checked_samples == 0):
+            raise ValueError('Prepared strike must be checked for this model and scene.')
+        if np.max(abs(seed-path.points[0])) > 2e-4:
+            raise ValueError('Prepared strike start no longer matches measured joints.')
+        if np.any(path.velocity_limit > self.speed_limit):
+            raise ValueError('Prepared strike exceeds simulation speed limit.')
+        return self._start(path)
+
     def move_joint(self, q):
         return self.start_trajectory([q])
 
@@ -397,7 +428,7 @@ class AirbotSimulation:
             "target_velocity_rad_s": self.target_velocity.tolist(), "joint_names": list(self.model.joint_names),
             "gravity_feedforward_Nm": self.gravity_effort.tolist(),
             "limits_rad": self._limit.tolist(), "documented_velocity_rad_s": self.model.velocity.tolist(),
-            "sim_velocity_limit_rad_s": np.minimum(self.model.velocity, SIM_SPEED).tolist(),
+            "sim_velocity_limit_rad_s": np.minimum(self.model.velocity, self.speed_limit).tolist(),
             "base_world": pose(base_p, base_r), "link6_world": pose(tip_p, tip_r),
             "flange_world": pose(flange_p, flange_r), "flange_base": pose(*flange_base),
             "tcp_world": pose(tcp_p, tcp_r), "tcp_base": pose(*tcp_base),

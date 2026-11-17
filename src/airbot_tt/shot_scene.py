@@ -13,8 +13,14 @@ from isaaclab.utils.math import quat_rotate_inverse
 
 
 class SingleShot:
-    def __init__(self, device='cpu'):
+    def __init__(self, device='cpu', *, speed_limit=None, physics_hz=None, initial=None):
         self.config = json.loads((ROOT/'configs/single_shot.json').read_text())
+        if initial is not None:
+            self.config['initial_q_rad'] = list(initial)
+        if physics_hz is not None:
+            if physics_hz not in (240,480,960,1920):
+                raise ValueError('Physics frequency must be 240, 480, 960 or 1920 Hz.')
+            self.config['physics_hz'] = physics_hz
         self.ball_config = c = load_ball_config()
         self.events = ShotEvents(c, self.config['timeout_s'])
         self.running = False
@@ -24,7 +30,8 @@ class SingleShot:
         self.body_names = list(model.links)
         self.filters = ['/World/Table', '/World/Net'] + [f'{ROBOT_PRIM}/{n}' for n in self.body_names]
         self.control = AirbotSimulation(device=device, model=model, base_position=self.config['base_position_m'],
-                                       initial=self.config['initial_q_rad'], task_scene=self, dt=1/self.config['physics_hz'])
+                                       initial=self.config['initial_q_rad'], task_scene=self, dt=1/self.config['physics_hz'],
+                                       **({} if speed_limit is None else {'speed_limit': speed_limit}))
         # The shared table/net geometry is also used by offline path preflight.
         from .collision import CollisionChecker
         obstacles = [dict(name='table', center_m=[0,0,c['table_top_m']-c['table_size_m'][2]/2], size_m=c['table_size_m']),

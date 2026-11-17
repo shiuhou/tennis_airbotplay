@@ -1,4 +1,43 @@
-# AIRBOT Play 資產與來源
+# 研究參考與資產來源
+
+本頁統一記錄參考論文、開源專案、資產與授權。閱讀心得與工程經驗放在 [notes](../../doc/notes/README.md)，實作與驗證結果放在 [ROADMAP](ROADMAP.md)。
+
+## 論文與研究程式
+
+更新：2026-11-16。優先級按當前 Gate 的問題安排：P0 優先、P1 後續、P2 延伸。證據範圍區分「待讀」「入口／摘要已核對」「方法／程式已核查」「原版已運行」「本機已採用並驗證」，不以收錄或作者成果代替本機驗收。
+
+| 優先級／關聯 Gate | 參考與固定版本 | 證據範圍 | 用途與限制 |
+| --- | --- | --- | --- |
+| 已有／M1–M2、M6–M7 | [PACE v5](https://arxiv.org/abs/2509.21690v5) · [程式 fdb192f8](https://github.com/purdue-tracelab/PACE-ICRA2026/tree/fdb192f8fff9f5ca54c4ec4a8441fda5174ca078) | 方法／選讀程式已核查；阻力參考已在本機採用驗證；原版訓練未運行 | 保留原有質量／係數差異和混合授權記錄，見「球物理來源」。實作：[球設定](../../configs/ball.json)、[力律](../../src/airbot_tt/ball.py)，驗證 `./verify_ball.sh`。reset/history、資訊隔離及接觸代理風險見 [notes](../../doc/notes/README.md)。 |
+| P0／M3–M5 | [Sony Physics Models v2](https://arxiv.org/html/2606.28805v2)，2026-07-01 | 版本、摘要及章節範圍已核對；公式／係數／適配待精讀；未採用 | 涵蓋隨Reynolds number／spin ratio變動的Drag／Magnus、球殼變形與桌面回彈、球拍接觸及residual neural network。不得把其標定成果視為AIRBOT已標定。 |
+| P0／M3 | [Isaac Sim 4.5 Collision Setup／Simulation Fundamentals](https://docs.isaacsim.omniverse.nvidia.com/4.5.0/physics/simulation_fundamentals.html) | BLOCKED：本次4.5頁面及版本首頁均回傳404；章節待恢復核查 | 用於對照凸包、凸分解及碰撞設定；不以最新版取代4.5證據。現有本機分塊凸包測試仍有效，這不是官方文件已讀的宣稱。 |
+| P0／M3–M5 | [Robotic Table Tennis: A Case Study into a High Speed Learning System](https://arxiv.org/abs/2309.03315) | 論文入口已定位；方法待讀 | 擬核對延遲、高速控制、動作空間、重置及評估；不直接採用其控制設定。 |
+| P0／M5 | [Ruckig 論文](https://arxiv.org/abs/2105.04830) · [程式 91085469](https://github.com/pantor/ruckig/tree/91085469d2133089c285e2f34541255815390e2c) | README接口／限制及GitHub授權標示已核對；未安裝或運行 | 指定位置／非零速度／加速度及jerk限制。MIT；Community中間路點使用雲端，Pro另行提供本地功能。minimum_duration是最短時長要求，不是任意指定精確擊球時刻的保證；仍須檢查關節限位、碰撞及實際跟蹤。 |
+| P0／M4–M8 | [Sony Ace Nature論文](https://www.nature.com/articles/s41586-026-10338-5) · [官方補充 57ac16a4](https://github.com/SonyResearch/ace_public/tree/57ac16a42c25c47bde24cd2a592804f4b800085b) | Nature來源連結、倉庫目錄與資料／示意程式說明已核對；方法未完整精讀 | 資料、示意程式及影片用途分列於下節；未確認完整再利用授權，未複製資產或運行訓練。 |
+| P1／M4 | [Role of Uncertainty in Anticipatory Trajectory Prediction for a Ping-Pong Playing Robot](https://arxiv.org/abs/2312.03024) | 搜尋定位；待讀 | 擬研究預測不確定性與提前運動的取捨，不只看位置誤差。 |
+| P1／M5–M8 | [Achieving Human Level Competitive Robot Table Tennis](https://arxiv.org/abs/2408.03906) | 官方資料README已確認論文連結；方法待讀 | 擬研究分層技能、技能描述及真實來球分布。 |
+| P1／M4、M7–M8 | [Google Initial Ball States 54cf18e4](https://github.com/google-deepmind/competitive_robot_table_tennis/tree/54cf18e41a8f134d98ad38710001ed50aabb8ebc) | 固定commit、README格式與授權已核對；Notebook未執行，未匯入資料 | README記載15,792組實測初始位置／速度／旋轉；軟體Apache-2.0，其他材料CC-BY4.0。不是完整實測軌跡，MuJoCo重播不是實測真值。 |
+| P1／M5、M7 | [Bridging Reinforcement Learning and Optimal Control via Feasible Action Mapping](https://arxiv.org/abs/2607.23930) | 搜尋定位；待讀 | 擬比較如何把策略動作映射成滿足約束的運動，尚未採用。 |
+| P1／M5 | [HITTER: A HumanoId Table TEnnis Robot via Hierarchical Planning and Learning](https://arxiv.org/abs/2508.21043) | 搜尋定位；待讀 | 審查建議用來研究擊球位置／速度／時間與下層執行的分工，須核對原文；不移植人形本體。 |
+| P1／M8 | [GoalsEye](https://arxiv.org/abs/2210.03662) | 團隊參考；待讀 | 目標條件化回球及迭代模仿學習，供比較規劃示範／模仿初始化；不是已採用的PPO或物理模型。 |
+| P2／M8之後 | [From Hitter to Player](https://arxiv.org/abs/2610.14067) | 搜尋定位；待讀 | 擬比較動作執行與落點策略分離；不提前啟動self-play。 |
+| P2／跨模組 | [PingpongDuo](https://arxiv.org/abs/2610.20579) | 搜尋定位；待讀 | 擬了解分層技能與協調，不擴大固定底座任務到雙人對打。 |
+
+HAMLET、VICAR僅由此次審查文字提出，未取得可確認身分的原文連結；暫列跨模組待辨識項，不猜測論文、不宣稱已讀Notion相關頁面。
+
+### Sony Ace 補充材料
+
+以下連結均固定到 `57ac16a42c25c47bde24cd2a592804f4b800085b`。本次讀取目錄與說明，沒有下載／重新發布資料集或影片；該目錄未見LICENSE，完整再利用授權仍待確認。
+
+- **[事件級資料說明](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/data/Readme.md)／[match_data.csv](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/data/match_data.csv)**：說明列出事件時間、shot/bounce/net類型、球位置及事件後速度／旋轉，可供後續M4和碰撞後狀態研究；尚未檢查CSV品質或標定適配。
+- **[Approximate Python Code](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/pseudo_code/Readme.md)**：示意SAC訓練迴圈等方法；原文說明省略通訊、checkpoint和工程配置，不能當作完整可復現的訓練程式。
+- **[影片索引](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/README.md)**：比賽與實驗展示，未以影片代替數值驗收。
+
+### 閱讀與採用順序
+
+目前M3／M4已在限定範圍通過；文獻待讀不會倒改既有驗證結果。M5已核對Ruckig接口但未引入依賴，使用自行推導的兩段五次插值及無摩擦相對碰撞公式（見[M5筆記](../../doc/notes/m5.md)）。本輪嘗試讀取Google高速系統／HITTER等原文遇SSL連線失敗，方法仍標待讀；不宣稱採用其結果。後續按需要精讀Sony物理模型；M6–M7比較PACE與Sony示意演算法，M8再研究GoalsEye及分層策略。新增方法須先與本機baseline比較，不因文獻收錄而直接換演算法。
+
+採用前補齊版本、實作位置、驗證入口及逐項授權。詳細結果仍只記ROADMAP與本地證據，不另建實驗日誌。
 
 ## 選型與版本
 

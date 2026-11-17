@@ -1,8 +1,8 @@
 # AIRBOT Play · Isaac Lab
 
-AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
+AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、非零速度定時擊球、限定三目標scripted回球、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
-過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes.md)。
+過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes/README.md)。論文、開源專案、閱讀狀態及授權統一記錄於 [研究參考與來源](.agents/docs/SOURCES.md)。
 
 ## 啟動
 
@@ -115,3 +115,21 @@ fixer 碰撞採單一凸包，球拍採拍柄與拍頭兩個凸包，空腔也�
 預測反彈、最高點、過網、落點的時間和球心位置，並辨認撞網／桌外落點。`prediction` 跑24組固定物理比對，報告為 `.agents/runs/foundation/prediction.json`；`shot` 同時檢查桌上機械臂場景的碰拍前和實測碰拍後預測。門檻為每類事件P95位置20mm、時間10ms。單拍與預測驗收採480Hz；基礎手臂模式維持240Hz。
 
 Python 入口為 `airbot_tt.prediction.predict_ball(state)`；`state` 是世界座標的 `[x,y,z,vx,vy,vz]`。測到碰拍後傳入新狀態並指定 `first_table_event='landing'`。目前採零旋與未標定係數；擦桌緣／網頂回報不支援，未來球拍撞擊須由後續規劃提供。
+
+### M5 擊球規劃驗證
+
+```bash
+./run.sh --headless --mode strike
+# 每個步長使用獨立程序；報告放本地，不加入Git。
+for hz in 240 480 960 1920; do
+  ./run.sh --headless --mode impact --ball-hz "$hz" \
+    --report ".agents/runs/foundation/impact_${hz}.json" || exit 1
+done
+python3 tests/check_ball_convergence.py --directory .agents/runs/foundation --impact --finest-hz 1920
+./run.sh --headless --mode return --return-split development \
+  --report .agents/runs/foundation/return_development.json
+./run.sh --headless --mode return --return-split validation \
+  --report .agents/runs/foundation/return_validation.json
+```
+
+設定在 `configs/strike.json`，程式解說見 [M5筆記](doc/notes/m5.md)。目前M5使用960Hz，是固定桌面站位、限定高反彈零旋來球的三目標scripted基線；獨立驗證36/36合法且命中（每目標12球）：發球前由物理模型算三條軌跡，發球後等待50 ms選用。驗證球不逐球重規劃；完整在線IK及碰撞預檢尚無法滿足來球時限。所有發球納入成功率，不代表實機或廣泛來球表現。

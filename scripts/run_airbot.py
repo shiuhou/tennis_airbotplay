@@ -87,6 +87,15 @@ def interactive(control, app):
 
 
 def dispatch(args, app):
+    if args.mode == "return":
+        from strike import verify_return
+        return verify_return(args.device or "cpu", split=args.return_split)
+    if args.mode == "impact":
+        from strike import verify_impact
+        return verify_impact(args.device or "cpu", hz=args.ball_hz or 480)
+    if args.mode == "strike":
+        from strike import verify
+        return verify(args.device or "cpu")
     if args.mode == "prediction":
         from prediction import verify
         return verify(args.device or "cpu")
@@ -150,9 +159,10 @@ def dispatch(args, app):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction"], default="interactive")
+    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return"], default="interactive")
     parser.add_argument("--report")
-    parser.add_argument("--ball-hz", type=int, choices=[240, 480, 960], help="Physics frequency for isolated ball acceptance")
+    parser.add_argument("--return-split", choices=["development", "validation"], default="development")
+    parser.add_argument("--ball-hz", type=int, choices=[240, 480, 960, 1920], help="Physics frequency for isolated ball acceptance")
     parser.add_argument("--ball-collision", choices=['triangles','compound'], default='triangles')
     parser.add_argument("--obstacles")
     parser.add_argument("--tool-config", help="Confirmed racket mass/distribution profile JSON")
@@ -186,10 +196,12 @@ def main():
         parser.error("Acceptance modes supply their own test obstacles.")
     if args.contact_body and (args.mode != "contact" or not args.tool_config):
         parser.error("--contact-body requires --mode contact and --tool-config.")
-    if args.mode in ("ball", "shot", "prediction") and (args.tool_config or args.obstacles):
+    if args.mode in ("ball", "shot", "prediction", "strike", "impact", "return") and (args.tool_config or args.obstacles):
         parser.error("Ball and shot acceptance supply their own tool and scene configuration.")
-    if args.ball_hz is not None and args.mode != "ball":
-        parser.error("--ball-hz requires --mode ball.")
+    if args.ball_hz is not None and args.mode not in ("ball", "impact"):
+        parser.error("--ball-hz requires --mode ball or impact.")
+    if args.ball_hz == 1920 and args.mode != "impact":
+        parser.error("1920 Hz is reserved for the moving-impact convergence diagnostic.")
     if args.ball_collision != "triangles" and args.mode != "ball":
         parser.error("--ball-collision requires --mode ball.")
     destination = report_path(args)
