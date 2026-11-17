@@ -87,6 +87,9 @@ def interactive(control, app):
 
 
 def dispatch(args, app):
+    if args.mode == "return-demo":
+        from airbot_tt.recording import record_returns
+        return record_returns(args.device or "cpu", Path(args.video))
     if args.mode == "return":
         from strike import verify_return
         return verify_return(args.device or "cpu", split=args.return_split)
@@ -159,7 +162,7 @@ def dispatch(args, app):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return"], default="interactive")
+    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return", "return-demo"], default="interactive")
     parser.add_argument("--report")
     parser.add_argument("--return-split", choices=["development", "validation"], default="development")
     parser.add_argument("--ball-hz", type=int, choices=[240, 480, 960, 1920], help="Physics frequency for isolated ball acceptance")
@@ -191,12 +194,12 @@ def main():
     AppLauncher.add_app_launcher_args(parser)
     parser.set_defaults(device="cpu")
     args = parser.parse_args()
-    args.enable_cameras = args.enable_cameras or args.mode == "demo"
+    args.enable_cameras = args.enable_cameras or args.mode in ("demo", "return-demo")
     if args.mode in ("verify", "contact") and args.obstacles:
         parser.error("Acceptance modes supply their own test obstacles.")
     if args.contact_body and (args.mode != "contact" or not args.tool_config):
         parser.error("--contact-body requires --mode contact and --tool-config.")
-    if args.mode in ("ball", "shot", "prediction", "strike", "impact", "return") and (args.tool_config or args.obstacles):
+    if args.mode in ("ball", "shot", "prediction", "strike", "impact", "return", "return-demo") and (args.tool_config or args.obstacles):
         parser.error("Ball and shot acceptance supply their own tool and scene configuration.")
     if args.ball_hz is not None and args.mode not in ("ball", "impact"):
         parser.error("--ball-hz requires --mode ball or impact.")

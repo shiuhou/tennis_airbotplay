@@ -6,7 +6,7 @@ M4回答球會去哪裡；M5要決定擊球時刻、拍面位置／方向與速�
 
 ## 程式要接在哪裡
 
-現有 [prediction.py](../../src/airbot_tt/prediction.py)提供球事件，[kinematics.py](../../src/airbot_tt/kinematics.py)提供FK／IK／Jacobian，[trajectory.py](../../src/airbot_tt/trajectory.py)目前以rest-to-rest為主。需先補非零擊球速度及擊球後減速，再由 [runtime.py](../../src/airbot_tt/runtime.py)驅動並量測真實paddle運動。
+現有 [prediction.py](../../src/airbot_tt/prediction.py)提供球事件，[kinematics.py](../../src/airbot_tt/kinematics.py)提供FK／IK／Jacobian，[trajectory.py](../../src/airbot_tt/trajectory.py)已有rest-to-rest及M5非零速度擊球軌跡；兩段五次曲線提供擊球與減速，由 [runtime.py](../../src/airbot_tt/runtime.py)驅動並量測真實paddle運動。
 
 ## 完成順序與驗證界線
 
@@ -19,3 +19,17 @@ M4回答球會去哪裡；M5要決定擊球時刻、拍面位置／方向與速�
 - **先把揮拍控制驗清楚，再看回球率**
 
   M5先無球量測指定時刻的拍面位置、方向和速度，再測移動球拍撞球，最後評估完整回球。這樣失敗時才能分辨是手臂沒跟上、碰撞模型不準，還是擊球方案本身不對；靜態拍通過不代表高速揮拍也通過。
+
+## M5之後：回到PACE核心學習
+
+**M5幫我們判斷學習出了什麼問題，下一步仍是遷移PACE。** 若策略學不會碰球，現在可以分別檢查球預測、TCP、驅動和獎勵，而不用把所有失敗都歸因於RL。
+
+- **M6：先理解reward與predictor。** 每次只看一個機制：它讀什麼、算出什麼、為什麼會鼓勵這個動作？先用成功／漏接／非法回球小例子看獎勵是否排得合理，再接學習模型。預測器也要比較同樣觀測條件下的等速與物理方法，不能多給一方真值速度。
+- **M7：再做PACE-style PPO適配。** 六軸動作、固定底座，保留原定五組消融。先有不帶learned predictor的基線，再逐項看hit guidance、return guidance和learned predictor是否有效。與M5比較時，先固定相同目標及來球。
+- **M8：最後加入目標條件。** 在固定目標策略理解清楚後，讓同一策略根據目標落點改變動作。模仿初始化可作對照，但不是開始PACE PPO前必做的一條新路線。
+
+M5完整規劃要約2秒，這是模型規劃基線的限制。PACE-style policy預期直接輸出關節動作，不必每一步重算M5路徑，因此不需要先把規劃器加速到即時才能研究PACE。policy本身的推理、觀測延遲和驅動仍須實測，不能先宣稱已解決即時性。
+
+**什麼時候才考慮新方法？** 當可比較的PACE基線顯示真實瓶頸，再把「改預測目標」「加入可達性引導」「改成分層控制」列成獨立實驗。閱讀HITTER、Sony或Google有助於理解取捨，但不等於現在就要實作它們；相關原文核查程度以[SOURCES](../../.agents/docs/SOURCES.md)為準。
+
+這條路線先追求可解釋的復現與跨形態適配。能否形成新方法貢獻，要由後續實驗回答，不必在開始學習前承諾。

@@ -163,3 +163,112 @@ def record(control, video_path):
         "commands": commands,
         "frames": frames,
     }
+
+
+def record_returns(device, video_path):
+    """Three real PhysX returns, captured at 60 Hz and played at quarter speed."""
+    import hashlib
+    from PIL import Image, ImageDraw, ImageFont
+    from pxr import UsdShade
+    from .config import ROOT
+    from .shot_scene import SingleShot
+    from .planning import load_strike_config, plan_return, serves
+    cfg = load_strike_config()
+    task = SingleShot(device, speed_limit=cfg['simulation_speed_limit_rad_s'],
+                      physics_hz=cfg['physics_hz'], initial=cfg['ready_q_rad'])
+    c = task.control
+    path = Path(video_path)
+    if path.suffix.lower() != '.mp4':
+        raise ValueError('Video must use .mp4.')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    camera = _Camera(np.array([-.15, 0, 1.05]))
+    stage = c.sim.stage
+    prim = stage.GetPrimAtPath(CAMERA_PATH)
+    cam = UsdGeom.Camera(prim)
+    cam.ClearXformOpOrder()
+    cam.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(
+        Gf.Vec3d(-3.3, -3.3, 3.15), Gf.Vec3d(-.05, 0, 1.0), Gf.Vec3d(0, 0, 1)).GetInverse())
+    def color_object(prim_path, name, color):
+        material_path = '/World/VideoMaterials/'+name
+        material_cfg = sim_utils.PreviewSurfaceCfg(diffuse_color=color, roughness=.7)
+        material_cfg.func(material_path, material_cfg)
+        binding = UsdShade.MaterialBindingAPI.Apply(stage.GetPrimAtPath(prim_path))
+        for purpose in ('preview','full'):
+            binding.Bind(UsdShade.Material.Get(stage,material_path),
+                         bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose=purpose)
+    # Keep all physical bodies' materials intact; only goal outlines receive display materials.
+    colors = [(0.1, .85, .95), (1., .7, .1), (.95, .3, .75)]
+    for index, (goal, color) in enumerate(zip(cfg['goals_xy_m'], colors)):
+        x, y = goal; w = cfg['goal_half_width_m']; z = task.ball_config['table_top_m']+.003
+        line = UsdGeom.BasisCurves.Define(stage, f'/World/GoalOutline{index}')
+        line.CreateTypeAttr('linear'); line.CreateWrapAttr('nonperiodic')
+        line.CreateCurveVertexCountsAttr([5])
+        line.CreatePointsAttr([(x-w,y-w,z),(x+w,y-w,z),(x+w,y+w,z),(x-w,y+w,z),(x-w,y-w,z)])
+        line.CreateWidthsAttr([.008]*5); line.CreateDisplayColorAttr([color])
+        color_object(f'/World/GoalOutline{index}',f'Goal{index}',color)
+    font = ImageFont.load_default()
+    report = dict(status='STARTING', renderer='Isaac Sim Kit RTX', physics_hz=cfg['physics_hz'],
+                  capture_hz=60, playback_fps=15, playback_speed=.25, trials=[], frames=0,
+                  scope='three measured returns of validation_0; illustration, not a new 36-shot evaluation',
+                  source_sha256={})
+    for name in ['src/airbot_tt/recording.py','src/airbot_tt/runtime.py','src/airbot_tt/shot_scene.py',
+                 'src/airbot_tt/planning.py','src/airbot_tt/trajectory.py','configs/strike.json']:
+        report['source_sha256'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+    step_count = round(1/(60*c.dt))
+    assert math.isclose(step_count*c.dt, 1/60)
+    partial = path.with_name('.'+path.stem+'.partial.mp4')
+    serve = serves('validation', cfg)[0]
+    try:
+        with imageio.get_writer(str(partial), format='FFMPEG', fps=15, codec='libx264',
+                               pixelformat='yuv420p', macro_block_size=None, output_params=['-crf','18']) as writer:
+            for index, goal in enumerate(cfg['goals_xy_m']):
+                plan = plan_return(c.model,c.checker,cfg['ready_q_rad'],
+                    np.r_[cfg['serve_position_m'],cfg['serve_velocity_m_s']],goal,
+                    np.array(task.config['base_position_m']),task.ball_config,cfg)
+                if not plan['accepted']:raise RuntimeError(str(plan))
+                task.reset(serve)
+                for _ in range(12):c.sim.render()
+                writes = c.state_writes; started = False; samples = []; step = 0
+                def capture():
+                    c.sim.render()
+                    frame = Image.fromarray(camera.rgb())
+                    # Screen-space marker follows the measured ball centre; no simulated state is modified.
+                    view = Gf.Matrix4d().SetLookAt(Gf.Vec3d(-3.3,-3.3,3.15),Gf.Vec3d(-.05,0,1.),Gf.Vec3d(0,0,1))
+                    point = view.Transform(Gf.Vec3d(*map(float,task.state[:3])))
+                    if point[2] < 0:
+                        focal_pixels=24/20.955*WIDTH
+                        px=WIDTH/2+focal_pixels*point[0]/(-point[2])
+                        py=HEIGHT/2-focal_pixels*point[1]/(-point[2])
+                        ImageDraw.Draw(frame).ellipse((px-5,py-5,px+5,py+5),fill=(255,140,0),outline='white',width=1)
+                    banner = Image.new('RGB',(WIDTH//2,38),(17,24,36))
+                    draw = ImageDraw.Draw(banner)
+                    label = ['LEFT','CENTRE','RIGHT'][index]
+                    draw.text((9,4), f'M5 | {label} target | PhysX + ball marker | 0.25x', font=font, fill='white')
+                    draw.text((9,21), f't = {task.time:.3f} s   {task.events.outcome or task.events.phase}', font=font,
+                              fill=tuple(int(v*255) for v in colors[index]))
+                    frame.paste(banner.resize((WIDTH,76),Image.Resampling.LANCZOS if hasattr(Image,'Resampling') else Image.LANCZOS),(0,0))
+                    writer.append_data(np.asarray(frame)); report['frames'] += 1
+                    return np.asarray(frame)
+                capture()
+                while task.events.outcome is None:
+                    if not started and task.time+1e-10 >= cfg['reaction_delay_s']:
+                        c.start_prepared_strike(plan['path']); started = True
+                    task.step(); step += 1
+                    if step % step_count == 0 or task.events.outcome is not None:
+                        samples.append(dict(time_s=task.time, ball=task.state.tolist(),
+                                            tcp=c.state()['tcp_world'], q_rad=c.q().tolist()))
+                        frame = capture()
+                if c.state_writes != writes:raise RuntimeError('Unexpected joint state write')
+                if task.events.outcome != 'legal_return':
+                    report['trials'].append(dict(goal=goal,outcome=task.events.outcome,events=task.events.events))
+                    report['status']='FAIL'
+                    error=RuntimeError(task.events.outcome);error.report=report
+                    raise error
+                for _ in range(12):writer.append_data(frame);report['frames']+=1
+                report['trials'].append(dict(goal=goal,serve=serve,events=task.events.events,
+                                              outcome=task.events.outcome,samples=samples))
+        partial.replace(path)
+    finally:
+        camera.close(); partial.unlink(missing_ok=True)
+    report.update(status='PASS', video=str(path), duration_s=report['frames']/15)
+    return report

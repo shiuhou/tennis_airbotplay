@@ -2,6 +2,8 @@
 
 AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、非零速度定時擊球、限定三目標scripted回球、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
+研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6／M7的核心學習尚未實作，即時規劃加速不作為其前提。
+
 過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes/README.md)。論文、開源專案、閱讀狀態及授權統一記錄於 [研究參考與來源](.agents/docs/SOURCES.md)。
 
 ## 啟動
@@ -133,3 +135,5 @@ python3 tests/check_ball_convergence.py --directory .agents/runs/foundation --im
 ```
 
 設定在 `configs/strike.json`，程式解說見 [M5筆記](doc/notes/m5.md)。目前M5使用960Hz，是固定桌面站位、限定高反彈零旋來球的三目標scripted基線；獨立驗證36/36合法且命中（每目標12球）：發球前由物理模型算三條軌跡，發球後等待50 ms選用。驗證球不逐球重規劃；完整在線IK及碰撞預檢尚無法滿足來球時限。所有發球納入成功率，不代表實機或廣泛來球表現。
+
+M5也提供實際仿真慢放影片入口：`--mode return-demo --video .agents/runs/foundation/m5_visuals/m5_returns.mp4`。三目標回球路線及36次落點圖見[M5視覺化](doc/notes/m5.md#6-m5現在做到哪裡)。
