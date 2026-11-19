@@ -137,6 +137,16 @@ python3 tests/check_ball_convergence.py --directory .agents/runs/foundation --im
 設定在 `configs/strike.json`，程式解說見 [M5筆記](doc/notes/m5.md)。目前M5使用960Hz，是固定桌面站位、限定高反彈零旋來球的三目標scripted基線；獨立驗證36/36合法且命中（每目標12球）：發球前由物理模型算三條軌跡，發球後等待50 ms選用。驗證球不逐球重規劃；完整在線IK及碰撞預檢尚無法滿足來球時限。所有發球納入成功率，不代表實機或廣泛來球表現。
 
 M5也提供實際仿真慢放影片入口：`--mode return-demo --video .agents/runs/foundation/m5_visuals/m5_returns.mp4`。三目標回球路線及36次落點圖見[M5視覺化](doc/notes/m5.md#6-m5現在做到哪裡)。
+
+## PACE 原始方法學習
+
+PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.md)，再對照[獎勵公式與算例](doc/notes/pace_rewards.md)。目前為原碼查證，尚未移植predictor／actor／critic或開始訓練。
+
 ## Gemini 335L 相機標定
 
 獨立主機工具入口：`bash scripts/camera_calibration/setup.sh`，接著執行 `bash scripts/camera_calibration/run.sh official info`。交接順序是先讀出廠參數、做幾何與深度驗證，有明確問題才重標。官方讀參數／錄影→離線匯入與驗證、交回檔案及完整操作流程見[相機標定操作筆記](doc/notes/camera_calibration.md)。原始資料留本地runs；不含手眼標定或機械臂操作。離線測試通過，實機採集與精度尚未驗證。
+
+
+## AIRBOT Play 真機入門（規劃）
+
+先看[H0–H4版本盤點與實作順序](doc/notes/hardware_bringup.md)。目前真機硬體／服務／SDK版本及連接方式未知；第一步是在預計控制機械臂的電腦查已安裝版本，尚無可執行的真機控制入口。硬體驗證與PACE學習分開，不執行M5高速軌跡。

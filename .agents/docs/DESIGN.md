@@ -88,6 +88,13 @@ M5的來球、開發／驗證種子與數量固定於同一設定；三個目標
 
 ## PACE學習接口的方向（尚未實作）
 
+原版接口與時序依[PACE完整資料流](../../doc/notes/pace_pipeline.md)核對：learned predictor獨立監督更新，PPO不反傳到predictor；教師含啟發式fallback，原版還有預測回填延遲與reset歷史問題。以下是AIRBOT預期方向，不等於原版已具備資訊隔離或本機已實作。
+
 M6／M7沿用六軸關節驅動、固定工具和球任務。預期資料流為「可部署的球歷史／本體觀測 → 可選learned predictor → PACE-style policy → 六維有界關節位置residual → 驅動 → 物理步進」；physics predictor提供訓練引導或監督目標，真值只供teacher／critic及驗證。各觀測欄位、控制頻率與動作縮放仍須於實作時逐項核查。
 
 M5的「逆向落點 → IK／Jacobian → 定時軌跡」保留作外部基線，不插入policy每次推理。完整規劃耗時與policy推理耗時分別量測；本輪未建立RL環境或啟動訓練。改成分層規劃控制、技能庫或物理殘差模型屬後續候選，須由基線實驗支持。
+
+
+## 真機準備接口（僅規劃）
+
+H0–H4先用相符版本的官方服務／SDK／範例，確認副作用後才補最小只讀記錄層；不另建通訊協定、FK或控制器。主機盤點不建立AirbotClient，H1記錄層與取得Lease的運動層分開；尚未實作。既有kinematics／tool負責仿真對照，SDK end pose與Racket TCP的語意須核實。完整關卡、資料時序與未決契約見[真機筆記](../../doc/notes/hardware_bringup.md)。

@@ -2,6 +2,17 @@
 
 本頁統一記錄參考論文、開源專案、資產與授權。閱讀心得與工程經驗放在 [notes](../../doc/notes/README.md)，實作與驗證結果放在 [ROADMAP](ROADMAP.md)。
 
+## AIRBOT Play真機控制來源（2026-11-19）
+
+依使用者提供的bring-up規劃重新查閱官網，以下是文件核查，不是已連線／安裝／驗證本台設備；實際硬體、服務、SDK版本與拓撲使用者回覆皆未知。公開說明見[H0–H4筆記](../../doc/notes/hardware_bringup.md)。
+
+- [版本與下載中心](https://docs.discover-robotics.com/document/airbot-play/changelog.html)：列2026-03-13 V5.2、主程序5.2.5、SDK5.2.3；新版arm_sdk／AirbotClient／Lease。不是本台升級相容性證明。
+- [API總覽](https://docs.discover-robotics.com/document/airbot-play/sdk/api/reference.html)、[狀態與單位](https://docs.discover-robotics.com/document/airbot-play/sdk/api/types/arm-state.html)：查詢接口、efforts為A、軟體急停需控制權；指令成功發送不代表已停穩。
+- [官方API範例](https://docs.discover-robotics.com/document/airbot-play/sdk/api/examples.html)：client初始化自動連線；關節／馬達讀取完整示例含acquire_control與重力補償，不能原樣當H1只讀程式。未執行這些範例。
+- [控制模式](https://docs.discover-robotics.com/document/airbot-play/sdk/concepts/control-modes.html)、[Lease](https://docs.discover-robotics.com/document/airbot-play/sdk/concepts/lease.html)：四種模式、servo預設250Hz；取消既有運動及失聯停止契約仍需版本核對與實測。
+- [硬體接口](https://docs.discover-robotics.com/document/airbot-play/quick-start/hardware-interfaces.html)、[安裝](https://docs.discover-robotics.com/document/airbot-play/sdk/quickstart/installation.html)、[範例列舉](https://docs.discover-robotics.com/document/airbot-play/sdk/quickstart/examples/list.html)：現行USB用途、底座按鍵為零校、官方包與環境要求。未下載／安裝套件、啟服務或刷寫。
+- 附件的/en/airbot-play/下control-modes與hardware-interfaces兩連結本輪404，已用上述/document/入口核對。不同年代升級工具／服務互斥與本台接線禁忌尚未核對到適用手冊，不生成設備操作命令。官方二進位包及SDK是否有完整開源與再散布授權尚未查明，不能因文件可讀便視為可複製重發。
+
 ## 相機標定來源（2026-11-19）
 
 - [Orbbec Python SDK](https://github.com/orbbec/pyorbbecsdk/tree/68cdfa181e09f0ddd0f21b77dff29cb3e7a0f0d2)：固定commit 68cdfa18，直接執行官方01_hello_camera／04_camera_calibration／04_enumerate／01_recorder／02_playback，離線匯入重用官方回放與utils。原檔及Apache-2.0 LICENSE下載至本地runs，逐檔SHA256見configs/orbbec_examples.json，不修改或重複vendor進倉庫。套件固定pyorbbecsdk2 2.1.3；安裝、雜湊與官方info／parameters無裝置路徑已執行，真實錄影與BAG匯入尚未驗證。官方讀參數範例的退出0不能當硬體成功。SDK元件授權依套件原附檔保留。
@@ -40,6 +51,8 @@ HAMLET、VICAR僅由此次審查文字提出，未取得可確認身分的原文
 - **[影片索引](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/README.md)**：比賽與實驗展示，未以影片代替數值驗收。
 
 ### 閱讀與採用順序
+
+2026-11-19深讀：PACE來源擴至runner／actor-critic／PPO／storage及訓練評測入口，58個文字檔固定來源雜湊見[清單](../../configs/pace_sources.json)。論文v5與實作差異、9項原函式隔離查證見[完整資料流](../../doc/notes/pace_pipeline.md)；未修改上游，未復現整體訓練或作者checkpoint成績。
 
 2026-11-16方向確認：PACE是唯一主要學習與遷移對象。下一步先回讀已固定版本的reward、predictor與訓練接口，建立AIRBOT適配及消融。其他來源按具體問題選讀，不把技能庫、HITTER式分層控制或即時規劃優化列為M6前置。
 
