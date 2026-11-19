@@ -1,0 +1,51 @@
+{
+  "schema": "airbot-m6-apex-v1",
+  "scope": "Offline clean synthetic M5-distribution apex guidance; not PPO or real perception",
+  "physics_hz": 960,
+  "decimation": 20,
+  "history": 5,
+  "predictor": {
+    "hidden": [
+      64,
+      64
+    ],
+    "lr": 0.0005,
+    "batch_size": 32,
+    "epochs": 20,
+    "seed": 6100
+  },
+  "splits": {
+    "train": {
+      "seed": 6101,
+      "serves": 128
+    },
+    "validation": {
+      "seed": 6102,
+      "serves": 32
+    },
+    "heldout": {
+      "seed": 6104,
+      "serves": 64
+    }
+  },
+  "reward": {
+    "hit_std_m": 0.5,
+    "hit_floor_m": 0.15,
+    "landing_intercept": 3.0,
+    "net_target_z_m": 1.11,
+    "net_std_m": 0.4,
+    "goal_xy_m": [
+      0.75,
+      0.0
+    ],
+    "hit_weight": 2.0,
+    "landing_weight": 60.0,
+    "net_weight": 100.0,
+    "source_event_dt_s": 0.02
+  },
+  "gate": {
+    "predictor_rmse_m": 0.03,
+    "teacher_p95_position_m": 0.02,
+    "teacher_p95_time_s": 0.01
+  }
+}

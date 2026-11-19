@@ -4,11 +4,12 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$project_root"
 image=sha256:9c5b00fb775c65913f78f22eadb56912853c1f9f1c38828e53fb99369e29c49e
 python_path="$project_root/src:$project_root/tests"
+mkdir -p "$project_root/.agents/runs/foundation/tmp"
 mount_args=(--rm -i --user "$(id -u):$(id -g)" -v "$project_root:$project_root" -w "$project_root"
-  -e "PYTHONPATH=$python_path" -e PYTHONUNBUFFERED=1)
+  -e "PYTHONPATH=$python_path" -e PYTHONUNBUFFERED=1
+  -e "TMPDIR=$project_root/.agents/runs/foundation/tmp")
 if [[ "${1:-}" == --unit ]]; then
-  exec docker run "${mount_args[@]}" --entrypoint /isaac-sim/python.sh "$image" \
-    -m unittest discover -v -s tests
+  exec bash scripts/verify_groups.sh "${2:-all}"
 fi
 
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/airbot-isaac"

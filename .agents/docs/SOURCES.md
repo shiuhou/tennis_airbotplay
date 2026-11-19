@@ -115,3 +115,17 @@ Flange 是 `link6` 局部 (0, 0, 0.0865) m，旋轉為單位矩陣，對應原 `
 - 已驗證的本機 OCI 映像 ID 為 `sha256:9c5b00fb775c65913f78f22eadb56912853c1f9f1c38828e53fb99369e29c49e`。Isaac Sim `4.5.0-rc.36+isaaclab_minimal_45.19180.b735e627.gl`，Isaac Lab `2.1.0`，Kit URDF Importer `2.3.14+106.5.0.lx64.r.cp310`。Sim 與 Kit 擴充依 NVIDIA 授權使用。映像與 Kit 擴充由執行環境提供。[Isaac Sim 4.5 授權](https://catalog.ngc.nvidia.com/orgs/nvidia/-/containers/isaac-sim/4.5.0)
 - Python 3.10.15。Kit session 使用 NumPy 1.26.0／SciPy 1.10.1，獨立數值回歸使用同一映像的 NumPy 1.26.4／SciPy 1.15.2。NumPy、SciPy、PyTorch（2.5.1+cu124）為 BSD-3-Clause；ImageIO 2.37.0 與 imageio-ffmpeg 0.6.0 為 BSD-2-Clause。相依模組由映像安裝。
 - FFmpeg 編碼使用 imageio-ffmpeg 所附 7.0.2，主機以 Ubuntu 的 FFmpeg/ffprobe 6.1.1-3ubuntu5（GPL build）獨立驗證 H.264。程式庫與影音編碼器未納入 Git。
+
+### M6直接復用與Lab接口核對（2026-11-19）
+
+M6由`scripts/prepare_pace.py`按`configs/pace_sources.json`下載／校驗固定原檔與授權，直接import PACE fdb192f8的`_MLPPredictor`。網路未改；本機窗口遮罩、離線訓練入口、同一步hook與checkpoint屬適配。reward公式來自同commit的`legged_lab/mdp/rewards.py`及T1配置；本機物理教師與事件有效性不同，細節見[M6筆記](../../doc/notes/m6_notes.md)。
+
+核對固定Isaac映像內`/workspace/isaaclab/source/isaaclab_rl/isaaclab_rl/rsl_rl/vecenv_wrapper.py`（SHA256 `6c9129e9592a013b874ee29dce8deae60815143554cda1de58c3e7a72c625e62`）：policy／critic字典與timeout轉換；Lab setup要求rsl-rl-lib2.3.1、torch2.5.1。容器未帶Git目錄，因此使用映像digest與檔案hash定位，不聲稱已取得該檔Git commit。完整RL wrapper尚未接本機，未安裝／升級其依賴。
+
+## 通用 RL 工程流程參考（2026-11-19）
+
+使用者提供 `rl_engineering_repo.zip` v0.3.0，採納研究假設、獨立評測、來源紀錄、分組驗證與按訓練 seed 比較等規約。保留 [原文與來源雜湊](../../assets/upstream/rl_engineering_v3/provenance.json) 及 MIT LICENSE；三份選入文件保持原文，其內部連結仍指原 repo。沒有搬入 CartPole／CleanRL trainer 或 task manager；本工程小型工具為按既有接口實作。實際採用及未實作範圍見 [研究流程筆記](../../doc/notes/research_workflow.md)。
+
+## M7 官方接口使用（2026-11-19）
+
+直接使用既有固定 fdb192f8 PACE 的 ActorCritic、PPO 與 RolloutStorage，匯入前按 pace_sources.json 核對原檔；未改上游程式。向量場景與 reset 契約核對固定 Isaac image 內 Lab 2.1 的 `scripts/tutorials/02_scene/create_scene.py`、`envs/direct_rl_env.py`、`scene/interactive_scene.py` 與 articulation API。重用 InteractiveScene 的 cloning／collision filtering，末態保存與 bootstrap 由 AIRBOT 薄接合處理。現有來源／授權規則不變，未移入 CartPole 演算法或新依賴堆疊。

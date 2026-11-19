@@ -90,6 +90,33 @@ def _articulation_config(model, base_position=BASE_POSITION, initial=HOME, speed
     )
 
 
+def configure_racket_colliders(model, prim_path):
+    """Shared physical tool offsets and named TCP before scene cloning."""
+    stage = omni.usd.get_context().get_stage()
+    # The importer instances mesh groups even when the top-level asset isn't
+    # instanceable. Make collider groups editable before setting actual offsets.
+    for name in model.links:
+        group = stage.GetPrimAtPath(f"{prim_path}/{name}/collisions")
+        if group.IsInstance():
+            group.SetInstanceable(False)
+    colliders = []
+    for prim in stage.Traverse():
+        if str(prim.GetPath()).startswith(prim_path+"/") and prim.HasAPI(UsdPhysics.CollisionAPI):
+            collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+            collision.CreateContactOffsetAttr(RACKET_CONTACT_OFFSET_M)
+            collision.CreateRestOffsetAttr(0.0)
+            colliders.append(str(prim.GetPath()))
+    if not all(any(f"/{name}/collisions/" in p for p in colliders) for name in ("fixer", "paddle")):
+        raise RuntimeError("Imported physical tool collision meshes are missing.")
+    # A named frame on the physical paddle, not an extra massless rigid body.
+    marker = UsdGeom.Xform.Define(stage, f"{prim_path}/paddle/RacketTCP")
+    pose = pose_dict(model.link6_tcp)
+    marker.AddTranslateOp().Set(Gf.Vec3d(*pose["position_m"]))
+    w, x, y, z = pose["quaternion_wxyz"]
+    marker.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(w, Gf.Vec3d(x, y, z)))
+    return colliders
+
+
 class AirbotSimulation:
     """A single scene. Call from the application thread after AppLauncher starts."""
 
@@ -132,28 +159,7 @@ class AirbotSimulation:
             cfg.func(f"/World/Obstacle{index}", cfg, translation=box.center_m)
         self.robot = Articulation(_articulation_config(self.model, base_position, initial, self.speed_limit))
         if self.model.has_racket:
-            stage = omni.usd.get_context().get_stage()
-            # The importer instances mesh groups even when the top-level asset isn't
-            # instanceable. Make collider groups editable before setting actual offsets.
-            for name in self.model.links:
-                group = stage.GetPrimAtPath(f"{ROBOT_PRIM}/{name}/collisions")
-                if group.IsInstance():
-                    group.SetInstanceable(False)
-            self.tool_colliders = []
-            for prim in stage.Traverse():
-                if str(prim.GetPath()).startswith(ROBOT_PRIM+"/") and prim.HasAPI(UsdPhysics.CollisionAPI):
-                    collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
-                    collision.CreateContactOffsetAttr(RACKET_CONTACT_OFFSET_M)
-                    collision.CreateRestOffsetAttr(0.0)
-                    self.tool_colliders.append(str(prim.GetPath()))
-            if not all(any(f"/{name}/collisions/" in p for p in self.tool_colliders) for name in ("fixer", "paddle")):
-                raise RuntimeError("Imported physical tool collision meshes are missing.")
-            # A named frame on the physical paddle, not an extra massless rigid body.
-            marker = UsdGeom.Xform.Define(stage, f"{ROBOT_PRIM}/paddle/RacketTCP")
-            pose = pose_dict(self.model.link6_tcp)
-            marker.AddTranslateOp().Set(Gf.Vec3d(*pose["position_m"]))
-            w, x, y, z = pose["quaternion_wxyz"]
-            marker.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(w, Gf.Vec3d(x, y, z)))
+            self.tool_colliders = configure_racket_colliders(self.model, ROBOT_PRIM)
         self.sensor = ContactSensor(ContactSensorCfg(
             prim_path=f"{ROBOT_PRIM}/(base_link|link[1-6]|fixer|paddle)", update_period=0.0,
         ))

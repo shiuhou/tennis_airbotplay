@@ -87,6 +87,12 @@ def interactive(control, app):
 
 
 def dispatch(args, app):
+    if args.mode in ('pace-smoke', 'pace-ab'):
+        from train_pace import run
+        return run(args.device, args.pace_envs, 'smoke' if args.mode=='pace-smoke' else 'ab', args.pace_output)
+    if args.mode == "pace-check":
+        from pace_m7 import verify
+        return verify(args.device, args.pace_envs, args.pace_check)
     if args.mode == "return-demo":
         from airbot_tt.recording import record_returns
         return record_returns(args.device or "cpu", Path(args.video))
@@ -99,6 +105,9 @@ def dispatch(args, app):
     if args.mode == "strike":
         from strike import verify
         return verify(args.device or "cpu")
+    if args.mode == "pace-data":
+        from pace_m6 import collect
+        return collect(args.device or "cpu", args.pace_split)
     if args.mode == "prediction":
         from prediction import verify
         return verify(args.device or "cpu")
@@ -162,8 +171,12 @@ def dispatch(args, app):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return", "return-demo"], default="interactive")
+    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return", "return-demo", "pace-data", "pace-check", "pace-smoke", "pace-ab"], default="interactive")
     parser.add_argument("--report")
+    parser.add_argument("--pace-output", default=".agents/runs/foundation/m7/smoke")
+    parser.add_argument("--pace-envs", type=int, default=2)
+    parser.add_argument("--pace-check", choices=["lifecycle", "control", "reference", "parity"], default="lifecycle")
+    parser.add_argument("--pace-split", choices=["all", "heldout"], default="all")
     parser.add_argument("--return-split", choices=["development", "validation"], default="development")
     parser.add_argument("--ball-hz", type=int, choices=[240, 480, 960, 1920], help="Physics frequency for isolated ball acceptance")
     parser.add_argument("--ball-collision", choices=['triangles','compound'], default='triangles')
@@ -199,7 +212,7 @@ def main():
         parser.error("Acceptance modes supply their own test obstacles.")
     if args.contact_body and (args.mode != "contact" or not args.tool_config):
         parser.error("--contact-body requires --mode contact and --tool-config.")
-    if args.mode in ("ball", "shot", "prediction", "strike", "impact", "return", "return-demo") and (args.tool_config or args.obstacles):
+    if args.mode in ("ball", "shot", "prediction", "strike", "impact", "return", "return-demo", "pace-data") and (args.tool_config or args.obstacles):
         parser.error("Ball and shot acceptance supply their own tool and scene configuration.")
     if args.ball_hz is not None and args.mode not in ("ball", "impact"):
         parser.error("--ball-hz requires --mode ball or impact.")

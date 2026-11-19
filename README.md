@@ -2,7 +2,7 @@
 
 AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、非零速度定時擊球、限定三目標scripted回球、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
-研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6／M7的核心學習尚未實作，即時規劃加速不作為其前提。
+研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6已完成離線物理引導與predictor驗證，M7的PPO尚未實作，即時規劃加速不作為其前提。
 
 過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes/README.md)。論文、開源專案、閱讀狀態及授權統一記錄於 [研究參考與來源](.agents/docs/SOURCES.md)。
 
@@ -140,7 +140,14 @@ M5也提供實際仿真慢放影片入口：`--mode return-demo --video .agents/
 
 ## PACE 原始方法學習
 
-PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.md)，再對照[獎勵公式與算例](doc/notes/pace_rewards.md)。目前為原碼查證，尚未移植predictor／actor／critic或開始訓練。
+PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.md)，再對照[獎勵公式與算例](doc/notes/pace_rewards.md)。M6已完成官方MLP的獨立監督訓練、教師／獎勵及接入契約；actor／critic與PPO尚未實作。完整方法、失敗與限制見[M6筆記](doc/notes/m6_notes.md)。
+
+```bash
+./verify_m6.sh --collect .agents/runs/foundation/m6/new_trial  # 校驗官方來源、採集PhysX資料、測試並訓練／評測predictor
+./verify_m6.sh --reuse-data .agents/runs/foundation/m6/new_trial    # 重用匹配的本地資料；仍重新訓練／評測
+```
+
+M6資料、checkpoint與報告留在`.agents/runs/foundation/m6/`。驗收限定M5窄分布、無球拍飛行、乾淨合成觀測；不是已訓練的回球policy。
 
 ## Gemini 335L 相機標定
 
@@ -150,3 +157,11 @@ PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.m
 ## AIRBOT Play 真機入門（規劃）
 
 先看[H0–H4版本盤點與實作順序](doc/notes/hardware_bringup.md)。目前真機硬體／服務／SDK版本及連接方式未知；第一步是在預計控制機械臂的電腦查已安裝版本，尚無可執行的真機控制入口。硬體驗證與PACE學習分開，不執行M5高速軌跡。
+
+## 研究流程工具
+
+`./run.sh --unit [research|core|pace|camera|all]` 按環境分組驗證。研究命令紀錄與離線比較使用 `python3 scripts/research.py --help`；M6 重畫圖使用 `scripts/plot_m6_results.py`，不會重新訓練。詳細操作、結果格式與限制見 [研究流程筆記](doc/notes/research_workflow.md)。
+
+## M7 初始 PPO 整合與 A／B 診斷
+
+使用固定 PACE ActorCritic／PPO 與六軸向量環境。物理 960 Hz、策略 48 Hz；先通過場景對照、reset／timeout 和動作追蹤，再啟動短試跑。步驟與完整命令見 [M7 筆記](doc/notes/m7_notes.md)，包含控制失敗原因、修正、資料流與結果限制。這不是五組正式研究或真機控制入口。

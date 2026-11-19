@@ -86,9 +86,9 @@ Racket TCP 在 link6 的位置約為 (−0.000212542, 0.007352473, 0.271280851) 
 
 M5的來球、開發／驗證種子與數量固定於同一設定；三個目標共用準備姿態。驗證集不用來調軌跡；所有發球含漏接、拒絕和故障均在分母。測試前先對三條實際路徑做空揮拍，再以獨立短程發球測相對碰撞公式及240／480／960Hz收斂；480Hz失敗後追加1920Hz對照，未放寬門檻。較快揮拍不能沿用低速測試的PASS。
 
-## PACE學習接口的方向（尚未實作）
+## PACE學習接口：M6離線與M7初始整合
 
-原版接口與時序依[PACE完整資料流](../../doc/notes/pace_pipeline.md)核對：learned predictor獨立監督更新，PPO不反傳到predictor；教師含啟發式fallback，原版還有預測回填延遲與reset歷史問題。以下是AIRBOT預期方向，不等於原版已具備資訊隔離或本機已實作。
+原版接口與時序依[PACE完整資料流](../../doc/notes/pace_pipeline.md)核對：learned predictor獨立監督更新，PPO不反傳到predictor；教師含啟發式fallback，原版還有預測回填延遲與reset歷史問題。M6以獨立接口修正資料／推論生命週期，其離線驗收不包含PPO；M7初始接合見本頁後節。
 
 M6／M7沿用六軸關節驅動、固定工具和球任務。預期資料流為「可部署的球歷史／本體觀測 → 可選learned predictor → PACE-style policy → 六維有界關節位置residual → 驅動 → 物理步進」；physics predictor提供訓練引導或監督目標，真值只供teacher／critic及驗證。各觀測欄位、控制頻率與動作縮放仍須於實作時逐項核查。
 
@@ -98,3 +98,25 @@ M5的「逆向落點 → IK／Jacobian → 定時軌跡」保留作外部基線�
 ## 真機準備接口（僅規劃）
 
 H0–H4先用相符版本的官方服務／SDK／範例，確認副作用後才補最小只讀記錄層；不另建通訊協定、FK或控制器。主機盤點不建立AirbotClient，H1記錄層與取得Lease的運動層分開；尚未實作。既有kinematics／tool負責仿真對照，SDK end pose與Racket TCP的語意須核實。完整關卡、資料時序與未決契約見[真機筆記](../../doc/notes/hardware_bringup.md)。
+
+## M6離線實作
+
+`pace_guidance.py`包裝既有DOP853作CPU參考教師，明確區分有效反彈後apex與無效狀態；`return_teacher`從離拍末態求落點／過網。`ReleaseLatch`接收合法拍面接觸、分離方向及TCP速度，只在首次有效離拍評分；M7才接實際RL事件。引導reward輸出raw／weighted／total，完整成功與正則尚未接訓練。
+
+`pace_predictor.py`校驗58份來源後直接import官方MLP，沒有複製trainer。資料五點／83.33ms、同serve及固定間隔；獨立RNG的Adam／MSE訓練與no-grad推論分離。`PredictionHook`每環境清history、在回傳前完成prediction；`actor_frame`建立23維或含預測的27維單幀，完整五幀actor／critic尚未建立。checkpoint保留來源與球參數hash，載回不能把未訓練模型誤作可用。
+
+`tests/pace_m6.py`沿用BallTestbed採獨立無球拍PhysX軌跡，以垂直速度過零插值作真實apex；訓練／驗證／heldout分seed。`scripts/verify_m6.py`先按validation選checkpoint且通過開發門檻才開heldout；同資訊基線以五個位置二次擬合估速，跨反彈弱點分段報告。批量GPU教師、近期在線buffer和官方RL wrapper整合留M7，不在離線驗收中冒稱完成。
+
+## 研究工作流
+
+`verify_groups.sh` 分別調度主機標準庫、固定 Isaac image 與相機 venv；`verify.py` 回報測試／skip 與退出碼。`research.py` 保存來源與輸入雜湊、條件、啟動命令、結果及產物雜湊，獨立比較只使用標準庫；共同條件與方法變因分開。它不是 trainer、resume 或任務管理器。M6 以 training.json 綁定來源／設定／資料／checkpoint，train 和 evaluate 可分離；繪圖只讀結果。來源雜湊不是 dirty 程式備份，科學推論仍需事先設計。
+
+## M7 六軸初始整合
+
+`pace_env.py` 使用 Lab 2.1 InteractiveScene 複製共用 URDF／BallTestbed，環境局部座標、隔離接觸與 tensor 事件。`pace_control.py` 的事件語義與原 ShotEvents 對照；位置 residual 經三次插值及每物理子步的速度／加速度限制，再送原驅動和重力補償。普通步進不寫關節狀態，reset 後依官方流程 forward 更新連桿運動學。
+
+原先逐位置目標煞停的 limiter 未通過控制 gate，已退役；不保留作預設或隱藏回退。三次插值把要求解讀為下一策略區間末端位置，以過去位置要求估終點速度；不是讀取未來球路或呼叫 M5 planner。
+
+初始 A／B 使用相同 115 維 actor、200 維 critic，無 MLP 提示。發球 reset 時 CPU 參考教師求 apex，物理子步依相位／剩餘時間遮罩並累積引導；不宣稱已完成 batched GPU teacher 或在線 predictor。critic 教師資訊兩組共用。
+
+`train_pace.py` 校驗固定 PACE 原檔後直接載 ActorCritic／PPO／Storage，僅處理 AIRBOT rollout、terminal-value bootstrap、保存與評測。使用 no_grad 讓 Isaac 狀態緩衝可在不同階段更新；不在可變仿真緩衝上混用 InferenceMode。評測只取 actor 均值，按預先指定的 env／serve 收齊結果。原版更新器不改寫；觀測歷史、動作 clip、reset 與稀疏事件屬明確機械臂適配。

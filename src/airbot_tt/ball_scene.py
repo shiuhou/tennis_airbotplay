@@ -20,7 +20,7 @@ from .tool import racket_model
 
 
 class BallTestbed:
-    def __init__(self, dt, device="cpu", *, sim=None, static_paddle=True, contact_filters=()):
+    def __init__(self, dt, device="cpu", *, sim=None, static_paddle=True, contact_filters=(), root="/World"):
         self.config = c = load_ball_config()
         self.sim = sim or sim_utils.SimulationContext(sim_utils.SimulationCfg(
             dt=dt, device=device, gravity=(0, 0, -c["gravity_m_s2"]),
@@ -40,11 +40,11 @@ class BallTestbed:
         table = sim_utils.CuboidCfg(size=tuple(c["table_size_m"]), collision_props=collision,
                                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
                                    physics_material=material(c["table_restitution"]))
-        table.func("/World/Table", table, translation=(0, 0, c["table_top_m"] - c["table_size_m"][2] / 2))
+        table.func(f"{root}/Table", table, translation=(0, 0, c["table_top_m"] - c["table_size_m"][2] / 2))
         net = sim_utils.CuboidCfg(size=(c["net_thickness_m"], c["table_size_m"][1], c["net_height_m"]),
                                  rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
                                  collision_props=collision, physics_material=material(c["net_restitution"]))
-        net.func("/World/Net", net, translation=(0, 0, c["table_top_m"] + c["net_height_m"] / 2))
+        net.func(f"{root}/Net", net, translation=(0, 0, c["table_top_m"] + c["net_height_m"] / 2))
 
         if static_paddle:
             # Reuse the reviewed CAD mesh and exact named TCP transform. In this
@@ -57,7 +57,7 @@ class BallTestbed:
             points_world = points_tcp @ fixture_rotation.T + self.paddle_center
             vertices, indices = np.unique(points_world, axis=0, return_inverse=True)
             stage = self.sim.stage
-            mesh = UsdGeom.Mesh.Define(stage, "/World/Paddle")
+            mesh = UsdGeom.Mesh.Define(stage, f"{root}/Paddle")
             mesh.CreatePointsAttr([Gf.Vec3f(*p) for p in vertices])
             mesh.CreateFaceVertexCountsAttr([3] * (len(points_world) // 3))
             mesh.CreateFaceVertexIndicesAttr(indices.tolist())
@@ -70,16 +70,16 @@ class BallTestbed:
             offset.CreateContactOffsetAttr(c["contact_offset_m"])
             offset.CreateRestOffsetAttr(0.0)
             mat = material(c["paddle_restitution"])
-            mat.func("/World/PaddleMaterial", mat)
+            mat.func(f"{root}/PaddleMaterial", mat)
             UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(
-                UsdShade.Material.Get(stage, "/World/PaddleMaterial"), materialPurpose="physics")
+                UsdShade.Material.Get(stage, f"{root}/PaddleMaterial"), materialPurpose="physics")
             if static_paddle == 'compound':
                 UsdPhysics.CollisionAPI(mesh.GetPrim()).CreateCollisionEnabledAttr(False)
                 for index, part in enumerate(model.tool_geometry['components']['paddle']['collision_parts']):
                     pts = stl_triangles(ROOT/part['mesh']).reshape(-1,3)
                     pts = ((pts-model.link6_tcp[:3,3]) @ model.link6_tcp[:3,:3]) @ fixture_rotation.T + self.paddle_center
                     pts, ids = np.unique(pts, axis=0, return_inverse=True)
-                    child = UsdGeom.Mesh.Define(stage, f'/World/Paddle/Collision{index}')
+                    child = UsdGeom.Mesh.Define(stage, f'{root}/Paddle/Collision{index}')
                     child.CreatePointsAttr([Gf.Vec3f(*p) for p in pts])
                     child.CreateFaceVertexCountsAttr([3]*(len(ids)//3))
                     child.CreateFaceVertexIndicesAttr(ids.tolist())
@@ -91,7 +91,7 @@ class BallTestbed:
             self.paddle_mesh_sha256 = model.tool_geometry["components"]["paddle"]["sha256"]
 
         self.ball = RigidObject(RigidObjectCfg(
-            prim_path="/World/Ball",
+            prim_path=f"{root}/Ball",
             spawn=sim_utils.SphereCfg(
                 radius=c["radius_m"], mass_props=sim_utils.MassPropertiesCfg(mass=c["mass_kg"]),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -104,8 +104,8 @@ class BallTestbed:
             init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.3, 2.0)),
         ))
         # Lab 2.1 exposes scene CCD, but body CCD is a native PhysX USD attribute.
-        PhysxSchema.PhysxRigidBodyAPI.Apply(stage.GetPrimAtPath("/World/Ball")).CreateEnableCCDAttr(True)
-        self.sensor = ContactSensor(ContactSensorCfg(prim_path="/World/Ball", update_period=0,
+        PhysxSchema.PhysxRigidBodyAPI.Apply(stage.GetPrimAtPath(f"{root.replace('.*', '0')}/Ball")).CreateEnableCCDAttr(True)
+        self.sensor = ContactSensor(ContactSensorCfg(prim_path=f"{root}/Ball", update_period=0,
                                                        filter_prim_paths_expr=list(contact_filters)))
         if sim is None:
             self.sim.reset()
