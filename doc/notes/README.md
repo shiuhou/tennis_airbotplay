@@ -6,6 +6,7 @@
 | --- | --- |
 | [M0：手臂工程基線](m0_notes.md) | 關節控制、FK／IK、軌跡、碰撞與工具接入 |
 | [裝配與TCP](assembly_notes.md) | J6／link6、CAD質量近似及TCP定義 |
+| [相機標定](camera_calibration.md) | Gemini 335L安裝與逐步採集、內參／串流外參、深度與彩深檢查；離線已測，實機未驗證，不含手眼 |
 | [M1：PACE與來源研究](m1_notes.md) | 如何對照原文與程式，哪些可參考、哪些尚未採用 |
 | [PACE原始擊球／回球獎勵](pace_rewards.md) | 實際配置、事件與算例；AIRBOT適配對照、理解反例與候選驗證，尚未實作 |
 | [M2：球物理](m2_notes.md) | 重力、阻力、接觸、座標轉換與步長收斂 |
@@ -16,7 +17,7 @@
 
 後續每個里程碑完成時更新對應筆記；跨階段主題可獨立成檔，從此處連結。程式片段需解釋變數、座標、單位與前提，連結實際實作；不必逐行抄碼。日期及結果應註明對應階段，避免把歷史結果當成最新版測試。
 
-更新日期：2026-11-16。M0–M4筆記依既有程式與證據整理；M5包含本輪新增實作、測試與負結果。正式驗收以 [SPEC](../../.agents/docs/SPEC.md) 為準，階段結果見 [ROADMAP](../../.agents/docs/ROADMAP.md)，研究來源見 [SOURCES](../../.agents/docs/SOURCES.md)。活動計畫與原始執行證據留本地。
+更新日期：2026-11-19。M0–M4筆記依既有程式與證據整理；M5包含本輪新增實作、測試與負結果。正式驗收以 [SPEC](../../.agents/docs/SPEC.md) 為準，階段結果見 [ROADMAP](../../.agents/docs/ROADMAP.md)，研究來源見 [SOURCES](../../.agents/docs/SOURCES.md)。活動計畫與原始執行證據留本地。
 
 ## 筆記不限定用Markdown
 

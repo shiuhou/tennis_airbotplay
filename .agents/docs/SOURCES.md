@@ -2,6 +2,12 @@
 
 本頁統一記錄參考論文、開源專案、資產與授權。閱讀心得與工程經驗放在 [notes](../../doc/notes/README.md)，實作與驗證結果放在 [ROADMAP](ROADMAP.md)。
 
+## 相機標定來源（2026-11-19）
+
+- [Orbbec Python SDK](https://github.com/orbbec/pyorbbecsdk/tree/68cdfa181e09f0ddd0f21b77dff29cb3e7a0f0d2)：固定來源commit 68cdfa18，核對參數讀取、多串流與影像保存範例；LICENSE為Apache-2.0。執行套件固定pyorbbecsdk2 2.1.3，已驗證匯入與裝置枚舉（0台），尚未驗證Gemini 335L實機。自製工具未複製範例整檔；SDK元件授權依套件原附檔保留。
+- OpenCV contrib 4.11.0.86：使用ChArUco偵測、calibrateCamera、固定內參stereoCalibrate及投影API。PDF及合成影像實際運行已驗證；[官方教學連結](https://docs.opencv.org/4.11.0/da/d13/tutorial_aruco_calibration.html)本輪HTTP403，不能宣稱已讀該網頁全文。
+- 使用者Calibration Target.pdf：SHA256見`configs/camera_board.json`，11×8格、15／11 mm名義尺寸；44標記ID0–43及70角點與DICT_4X4_50、legacy排列相容。字典原始後綴不可唯一反推，實物尺寸須另量。原附件不自動公開複製。
+
 ## 論文與研究程式
 
 更新：2026-11-16。優先級按當前 Gate 的問題安排：P0 優先、P1 後續、P2 延伸。證據範圍區分「待讀」「入口／摘要已核對」「方法／程式已核查」「原版已運行」「本機已採用並驗證」，不以收錄或作者成果代替本機驗收。

@@ -1,5 +1,15 @@
 # AIRBOT Play 仿真設計
 
+## 獨立相機標定
+
+預設交接路徑先驗證出廠參數。`factory-check`僅對validation影像估板姿態，不重估K／畸變；`alignment-check --model-source factory`沿用同一出廠模型，只有顯式選estimated才讀自行估計內參。兩種彩深報告分檔，保留可比較基線。原廠檢查不依賴intrinsic／stereo求解先完成。
+
+`scripts/camera_calibration/`提供主機Python入口與隔離依賴。`camera_device.py`只接Orbbec SDK，依明確序號與profile擷取原始輸出、保存metadata及出廠參數；不呼叫機械臂。`camera_calibration.py`以OpenCV求解，保持設備讀取與離線數值分離。
+
+ChArUco設定集中於`configs/camera_board.json`；PDF圖案已驗證為11×8、ID0–43與legacy排列，相容DICT_4X4_50，原始字典後綴不能唯一反推。init要求實測長度，板與CSV雜湊記入結果，補拍後需重求相關內參。資料依session、batch、frame_id、stream分層；出廠與自行估計分檔。
+
+相機外參使用`p_to=R@p_from+t_m`，SDK毫米轉公尺；不支援的畸變模型不默認為OpenCV Brown。Depth→RGB檢查由RGB板姿態及出廠深度模型建立平面，按射線交平面選板內ROI，再評估實測點殘差；獨立量距檢查另用使用者量得的軸向Z，避免把預測當真值。修正只寫離線候選，不改裝置。硬體精度需實機證據，合成測試僅驗證工程邏輯。
+
 ## 來源與座標
 
 選用官方 MoveIt2 Humble 描述的六軸 URDF 鏈和七份 STL。DISCOVERSE force 模型用於運動鏈交叉檢查與仿真力矩基線。其 default 模型及解析 IK 有不同關節局部座標與 TCP。Isaac Lab 2.1.0 的 UrdfConverter、Articulation、ImplicitActuator、DifferentialIKController 和 ContactSensor 提供導入、物理與控制接口。來源提交、授權、差異、硬體 SDK 版本與實測靜態比對見 [SOURCES](SOURCES.md)。
