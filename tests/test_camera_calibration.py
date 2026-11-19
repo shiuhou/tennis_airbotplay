@@ -138,19 +138,78 @@ class CameraCalibrationTests(unittest.TestCase):
         wrong=cal.plane_residuals(raw,.001,k,np.zeros(5),np.eye(3),[0,0,-.1],np.eye(3),[-.15,-.12,1.],(.3,.24),step=1)
         self.assertAlmostEqual(wrong['plane_median_signed_error_m'],-.2)
 
-    def test_capture_decode_preserves_depth_bits_and_rgb_order(self):
-        from airbot_tt.camera_device import decode_frame
+    def test_official_decode_preserves_depth_bits_and_rgb_order(self):
+        from airbot_tt.camera_recording import raw_image, load_playback
+        source=load_playback()
+        def decode_frame(frame):
+            return raw_image(frame,'depth' if frame.fmt=='Y16' else 'rgb',source.frame_to_bgr_image)
         class Frame:
             def __init__(self, data, fmt):self.data=data;self.fmt=fmt
             def get_width(self):return 2
             def get_height(self):return 1
-            def get_format(self):return type('Format',(),{'name':self.fmt})()
-            def get_data(self):return self.data
+            def get_format(self):return getattr(source.ob.OBFormat,self.fmt)
+            def get_data(self):return np.frombuffer(self.data,np.uint8)
         raw=np.array([1234,65535],np.uint16)
         np.testing.assert_array_equal(decode_frame(Frame(raw.tobytes(),'Y16')),raw.reshape(1,2))
         rgb=np.array([[[255,0,0],[0,255,0]]],np.uint8)
         np.testing.assert_array_equal(decode_frame(Frame(rgb.tobytes(),'RGB')),rgb[:,:,::-1])
         with self.assertRaises(ValueError):decode_frame(Frame(b'wrong','Y16'))
+        with self.assertRaisesRegex(ValueError,'Unsupported'):decode_frame(Frame(rgb.tobytes(),'BGR'))
+        with self.assertRaisesRegex(ValueError,'buffer'):decode_frame(Frame(b'bad','RGB'))
+
+
+    def test_bag_import_sampling_units_and_duplicate_guard(self):
+        # Only the recording transport is fake; exercise real export, PNG/CSV and guards.
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        from airbot_tt import camera_recording as rec
+        profile=NS(get_width=lambda:8,get_height=lambda:6,get_fps=lambda:30,
+                   get_format=lambda:NS(name='Y16'),get_type=lambda:NS(name='DEPTH_STREAM'),
+                   get_intrinsic=lambda:NS(fx=100.,fy=100.,cx=4.,cy=3.,width=8,height=6),
+                   get_distortion=lambda:NS(model=NS(name='NONE'),**dict.fromkeys(
+                       ['k1','k2','k3','k4','k5','k6','p1','p2'],0.)))
+        profile.as_video_stream_profile=lambda:profile
+        config=NS(get_enabled_stream_profile_list=lambda:NS(get_count=lambda:1,
+                  get_stream_profile_by_index=lambda i:profile),disable_all_stream=lambda:None,
+                  enable_stream=lambda p:None,set_frame_aggregate_output_mode=lambda m:None)
+        device=NS(get_device_info=lambda:NS(get_name=lambda:'Gemini 335L',
+                  get_serial_number=lambda:'test',get_firmware_version=lambda:'test'),
+                  get_playback_status=lambda:'STOPPED')
+        def frame(stamp):
+            return NS(get_width=profile.get_width,get_height=profile.get_height,
+                      get_format=profile.get_format,get_data=lambda:np.full((6,8),2000,np.uint16).tobytes(),
+                      get_stream_profile=lambda:profile,get_timestamp_us=lambda:stamp,
+                      get_depth_scale=lambda:.5,has_metadata=lambda k:False)
+        stopped=[]
+        def start(cfg,callback):
+            for stamp in (0,500000,1000000,2000000):
+                callback(NS(get_depth_frame=lambda stamp=stamp:frame(stamp)))
+        pipeline=NS(start=start,stop=lambda:stopped.append(True))
+        source=NS(ob=NS(PlaybackDevice=lambda path:device,
+                   OBFrameAggregateOutputMode=NS(FULL_FRAME_REQUIRE=1),
+                   OBPlaybackStatus=NS(STOPPED='STOPPED'),OBFrameMetadataType=NS(EXPOSURE=1,GAIN=2)),
+                   load_sidecar_json=lambda dev,path:True,setup_camera=lambda dev:(pipeline,config),
+                   state=NS(undistortion_map={}),frame_to_bgr_image=None)
+        bag=Path(self.tmp.name)/'test.bag';bag.write_bytes(b'synthetic transport only')
+        bag.with_suffix('.json').write_text('{}')
+        args=NS(session=self.session,bag=bag,stream=['depth'],count=2,interval=1.,start_s=1.,
+                max_skew_ms=10,reference_z_m=1.,depth_roi=[0,0,8,6],frontoparallel=True,split='validation')
+        with patch.object(rec,'load_playback',return_value=source):
+            report=rec.import_bag(args)
+            self.assertEqual(report['status'],'IMPORTED')
+            self.assertEqual(report['saved'],2)
+            records=cal.rows(self.session)
+            self.assertEqual([int(r['device_timestamp_us']) for r in records],[1000000,2000000])
+            self.assertAlmostEqual(float(records[0]['depth_scale_m_per_unit']),.0005)
+            image=cv2.imread(str(self.session/records[0]['relative_path']),cv2.IMREAD_UNCHANGED)
+            self.assertEqual(image.dtype,np.uint16)
+            self.assertTrue(np.all(image==2000))
+            self.assertTrue(stopped)
+            self.assertEqual(cal.read_json(self.session/'factory_calibration.json')['streams']['depth']['image_size_px'],[8,6])
+            args.split='fit'
+            with self.assertRaisesRegex(ValueError,'already imported'):rec.import_bag(args)
+            bag.with_suffix('.json').unlink()
+            with self.assertRaisesRegex(ValueError,'sidecar'):rec.import_bag(args)
 
     def test_pairing_rejects_unsynchronized_or_mixed_split(self):
         obj=self.board.getChessboardCorners()[:20]

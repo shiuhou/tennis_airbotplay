@@ -7,6 +7,8 @@ export TMPDIR="$local_dir/tmp"
 python3 -m venv "$local_dir/venv"
 "$local_dir/venv/bin/python" -m pip install -r "$root/scripts/camera_calibration/requirements.txt"
 # The SDK declares opencv-python; installing it alongside contrib overwrites cv2.
-# These tools use only the SDK extension, not its AV/pygame/pynput examples.
+# The selected upstream examples use NumPy/OpenCV and the SDK extension.
 "$local_dir/venv/bin/python" -m pip install --no-deps pyorbbecsdk2==2.1.3
+PYTHONPATH="$root/src" "$local_dir/venv/bin/python" -m airbot_tt.camera_official
+cd "$local_dir"
 "$local_dir/venv/bin/python" -c 'import cv2, pyorbbecsdk; assert hasattr(cv2, "aruco"); print("Camera environment ready:", cv2.__version__)'

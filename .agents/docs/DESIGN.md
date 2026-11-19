@@ -4,7 +4,9 @@
 
 預設交接路徑先驗證出廠參數。`factory-check`僅對validation影像估板姿態，不重估K／畸變；`alignment-check --model-source factory`沿用同一出廠模型，只有顯式選estimated才讀自行估計內參。兩種彩深報告分檔，保留可比較基線。原廠檢查不依賴intrinsic／stereo求解先完成。
 
-`scripts/camera_calibration/`提供主機Python入口與隔離依賴。`camera_device.py`只接Orbbec SDK，依明確序號與profile擷取原始輸出、保存metadata及出廠參數；不呼叫機械臂。`camera_calibration.py`以OpenCV求解，保持設備讀取與離線數值分離。
+`scripts/camera_calibration/`提供主機Python入口與隔離依賴。`camera_official.py`按configs/orbbec_examples.json下載／驗證固定commit的官方原檔與LICENSE，直接執行裝置資訊、參數、模式、錄影和回放範例。`camera_recording.py`只開PlaybackDevice，重用官方sidecar載入、回放設定與彩色轉換，補本工程PNG／CSV、出廠參數JSON、來源雜湊和獨立資料切分；不維護自寫即時相機控制。`camera_calibration.py`負責離線OpenCV驗證與可選重標，與機械臂隔離。舊inspect／capture及camera_device.py已退役。
+
+錄影BAG與sidecar成對保存；同session的裝置／韌體／SDK／profile／可見幾何模式須一致，同一錄影禁止重複匯入或跨fit／validation。匯入原始callback不重套官方顯示濾波，depth保留uint16與每幀尺度；回放host時間不冒充採集時間。官方parameters只列印預設模式參數，正式出廠JSON依錄影profile產生。實際BAG整合需接機短錄驗證，尚未作硬體PASS聲明。
 
 ChArUco設定集中於`configs/camera_board.json`；PDF圖案已驗證為11×8、ID0–43與legacy排列，相容DICT_4X4_50，原始字典後綴不能唯一反推。init要求實測長度，板與CSV雜湊記入結果，補拍後需重求相關內參。資料依session、batch、frame_id、stream分層；出廠與自行估計分檔。
 

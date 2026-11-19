@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gemini 335L calibration: inspect/init/capture/intrinsic/stereo/depth-check/board-check."""
+"""Gemini 335L calibration: official/import-bag and independent offline checks."""
 import argparse
 import json
 from pathlib import Path
@@ -12,8 +12,9 @@ from airbot_tt import camera_calibration as cal
 def main():
     p=argparse.ArgumentParser(description=__doc__,allow_abbrev=False)
     sub=p.add_subparsers(dest='command',required=True)
-    s=sub.add_parser('inspect',help='Enumerate Orbbec devices and available profiles; no streaming')
-    s.add_argument('--output',type=Path)
+    s=sub.add_parser('official',help='Run an unmodified pinned Orbbec example')
+    s.add_argument('example',choices=['info','parameters','profiles','record','playback'])
+    s.add_argument('extra',nargs=argparse.REMAINDER)
     s=sub.add_parser('init',help='Create a new session using physically measured board dimensions')
     s.add_argument('--session',required=True,type=Path)
     s.add_argument('--board',type=Path,default=cal.ROOT/'configs/camera_board.json')
@@ -24,18 +25,16 @@ def main():
     s.add_argument('--image',required=True,type=Path)
     s.add_argument('--board',type=Path,default=cal.ROOT/'configs/camera_board.json')
     s.add_argument('--output',required=True,type=Path)
-    s=sub.add_parser('capture',help='Preview and save raw frames; S saves, Q stops')
+    s=sub.add_parser('import-bag',help='Import raw samples from an official BAG + JSON sidecar')
     s.add_argument('--session',required=True,type=Path)
-    s.add_argument('--serial',required=True)
-    s.add_argument('--profile',action='append',required=True,help='e.g. rgb=1280x720@30:MJPG; use inspect values')
+    s.add_argument('--bag',required=True,type=Path)
+    s.add_argument('--stream',action='append',choices=cal.STREAMS,required=True)
     s.add_argument('--split',choices=['fit','validation'],required=True)
-    s.add_argument('--count',type=int,default=0,help='0: manual S key; 1..500: automatic interval snapshots')
+    s.add_argument('--count',type=int,default=20)
     s.add_argument('--interval',type=float,default=2)
-    s.add_argument('--warmup',type=float,default=10)
+    s.add_argument('--start-s',type=float,default=10)
     s.add_argument('--max-skew-ms',type=float,default=10)
-    s.add_argument('--headless',action='store_true')
-    s.add_argument('--laser',choices=['keep','on','off'],default='keep',help='Optional projector setting, restored at exit')
-    s.add_argument('--reference-z-m',type=float,help='Independently measured axial Z from depth optical origin to stationary plane')
+    s.add_argument('--reference-z-m',type=float)
     s.add_argument('--depth-roi',type=int,nargs=4,metavar=('X','Y','WIDTH','HEIGHT'))
     s.add_argument('--frontoparallel',action='store_true')
     s=sub.add_parser('intrinsic',help='Estimate K/distortion from fit frames and check separate validation frames')
@@ -71,11 +70,10 @@ def main():
     s.add_argument('--min-validation',type=int,default=5)
     s.add_argument('--max-rms',type=float,default=.5)
     args=p.parse_args()
-    if args.command=='inspect':
-        from airbot_tt.camera_device import inspect_devices
-        result=inspect_devices()
-        if args.output:cal.write_json(args.output,result)
-        print(json.dumps(result,indent=2));return 0 if result['devices'] else 2
+    if args.command=='official':
+        from airbot_tt.camera_official import run_example
+        extra=args.extra[1:] if args.extra[:1]==['--'] else args.extra
+        return run_example(args.example,extra)
     if args.command=='init':
         cal.init_session(args.session,args.board,args.square_mm,args.marker_mm)
         print('Created:',args.session.resolve());return 0
@@ -89,9 +87,9 @@ def main():
         if not cv2.imwrite(str(args.output),image):raise IOError('Failed to write board preview.')
         print(f'Detected {len(ids)}/{len(board.getChessboardCorners())} corners; preview: {args.output}')
         return 0
-    if args.command=='capture':
-        from airbot_tt.camera_device import capture
-        result=capture(args)
+    if args.command=='import-bag':
+        from airbot_tt.camera_recording import import_bag
+        result=import_bag(args)
     elif args.command=='intrinsic':
         if args.min_fit<3 or args.min_validation<1 or args.max_rms<=0:raise ValueError('Invalid calibration thresholds.')
         result,_=cal.intrinsic(args.session,args.stream,args.min_fit,args.min_validation,args.max_rms)
@@ -112,13 +110,13 @@ def main():
     # Full details stay in session/results; do not flood the console with per-frame reports.
     summary={k:v for k,v in result.items() if k not in ('frames','batches','validation','factory_validation','fit_frame_ids','rejected')}
     print(json.dumps(summary,ensure_ascii=False,indent=2))
-    return 0 if result['status'] in ('PASS','CAPTURED','COMPUTED_NOT_WORLD_CALIBRATED') else 2
+    return 0 if result['status'] in ('PASS','IMPORTED','COMPUTED_NOT_WORLD_CALIBRATED') else 2
 
 
 if __name__=='__main__':
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print('Stopped; captures already saved are retained.',file=sys.stderr);sys.exit(130)
+        print('Stopped; data already saved are retained.',file=sys.stderr);sys.exit(130)
     except (ValueError, OSError, KeyError, RuntimeError) as e:
         print(f'ERROR: {e}',file=sys.stderr);sys.exit(2)

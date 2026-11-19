@@ -4,7 +4,7 @@
 
 ## 相機標定來源（2026-11-19）
 
-- [Orbbec Python SDK](https://github.com/orbbec/pyorbbecsdk/tree/68cdfa181e09f0ddd0f21b77dff29cb3e7a0f0d2)：固定來源commit 68cdfa18，核對參數讀取、多串流與影像保存範例；LICENSE為Apache-2.0。執行套件固定pyorbbecsdk2 2.1.3，已驗證匯入與裝置枚舉（0台），尚未驗證Gemini 335L實機。自製工具未複製範例整檔；SDK元件授權依套件原附檔保留。
+- [Orbbec Python SDK](https://github.com/orbbec/pyorbbecsdk/tree/68cdfa181e09f0ddd0f21b77dff29cb3e7a0f0d2)：固定commit 68cdfa18，直接執行官方01_hello_camera／04_camera_calibration／04_enumerate／01_recorder／02_playback，離線匯入重用官方回放與utils。原檔及Apache-2.0 LICENSE下載至本地runs，逐檔SHA256見configs/orbbec_examples.json，不修改或重複vendor進倉庫。套件固定pyorbbecsdk2 2.1.3；安裝、雜湊與官方info／parameters無裝置路徑已執行，真實錄影與BAG匯入尚未驗證。官方讀參數範例的退出0不能當硬體成功。SDK元件授權依套件原附檔保留。
 - OpenCV contrib 4.11.0.86：使用ChArUco偵測、calibrateCamera、固定內參stereoCalibrate及投影API。PDF及合成影像實際運行已驗證；[官方教學連結](https://docs.opencv.org/4.11.0/da/d13/tutorial_aruco_calibration.html)本輪HTTP403，不能宣稱已讀該網頁全文。
 - 使用者Calibration Target.pdf：SHA256見`configs/camera_board.json`，11×8格、15／11 mm名義尺寸；44標記ID0–43及70角點與DICT_4X4_50、legacy排列相容。字典原始後綴不可唯一反推，實物尺寸須另量。原附件不自動公開複製。
 

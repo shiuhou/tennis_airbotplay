@@ -6,7 +6,7 @@
 | --- | --- |
 | [M0：手臂工程基線](m0_notes.md) | 關節控制、FK／IK、軌跡、碰撞與工具接入 |
 | [裝配與TCP](assembly_notes.md) | J6／link6、CAD質量近似及TCP定義 |
-| [相機標定](camera_calibration.md) | Gemini 335L安裝與逐步採集、內參／串流外參、深度與彩深檢查；離線已測，實機未驗證，不含手眼 |
+| [相機標定](camera_calibration.md) | Gemini 335L官方範例接通／讀參數／錄影，離線匯入與原廠幾何、彩深、深度驗證；有證據才重標，實機未驗證，不含手眼 |
 | [M1：PACE與來源研究](m1_notes.md) | 如何對照原文與程式，哪些可參考、哪些尚未採用 |
 | [PACE原始擊球／回球獎勵](pace_rewards.md) | 實際配置、事件與算例；AIRBOT適配對照、理解反例與候選驗證，尚未實作 |
 | [M2：球物理](m2_notes.md) | 重力、阻力、接觸、座標轉換與步長收斂 |

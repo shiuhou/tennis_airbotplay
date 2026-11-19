@@ -139,4 +139,4 @@ python3 tests/check_ball_convergence.py --directory .agents/runs/foundation --im
 M5也提供實際仿真慢放影片入口：`--mode return-demo --video .agents/runs/foundation/m5_visuals/m5_returns.mp4`。三目標回球路線及36次落點圖見[M5視覺化](doc/notes/m5.md#6-m5現在做到哪裡)。
 ## Gemini 335L 相機標定
 
-獨立主機工具入口：`bash scripts/camera_calibration/setup.sh`，接著執行 `bash scripts/camera_calibration/run.sh inspect`。交接順序是先讀出廠參數、做幾何與深度驗證，有明確問題才重標。階段A–E、交回檔案與完整操作流程見[相機標定操作筆記](doc/notes/camera_calibration.md)。原始資料留本地runs；不含手眼標定或機械臂操作。離線測試通過，實機採集與精度尚未驗證。
+獨立主機工具入口：`bash scripts/camera_calibration/setup.sh`，接著執行 `bash scripts/camera_calibration/run.sh official info`。交接順序是先讀出廠參數、做幾何與深度驗證，有明確問題才重標。官方讀參數／錄影→離線匯入與驗證、交回檔案及完整操作流程見[相機標定操作筆記](doc/notes/camera_calibration.md)。原始資料留本地runs；不含手眼標定或機械臂操作。離線測試通過，實機採集與精度尚未驗證。

@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/orbbec/pyorbbecsdk",
+  "commit": "68cdfa181e09f0ddd0f21b77dff29cb3e7a0f0d2",
+  "license": "Apache-2.0",
+  "files": {
+    "LICENSE": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+    "examples/advanced/01_recorder.py": "5a1e10ee46c4448ab9fc5877bd0f4772dc0b5c99ac0341163176fd4145fe9aea",
+    "examples/advanced/02_playback.py": "6cea8950fd74ee884e46ec2ca9ccc72ee1c08d08f0d558fa0e4cdbd0bc19785a",
+    "examples/advanced/04_enumerate.py": "d56c68597f1e1285f8769a81e28119d18cb0c59db3ed485407018fada7a49f13",
+    "examples/beginner/01_hello_camera.py": "4c82b9a33e56c3bd9b179d51e11db75616695d1d69c8b165b5b62aa22bb8040e",
+    "examples/beginner/04_camera_calibration.py": "78a3b494a267334194e44d24fad1e7b55fac7a4e5e4263af1c946a04a5f57301",
+    "examples/utils.py": "5871b6fcc0b7340e94ab9389e688cef10de2acaf91f45987c290e78a1957b130"
+  },
+  "commands": {
+    "info": "examples/beginner/01_hello_camera.py",
+    "parameters": "examples/beginner/04_camera_calibration.py",
+    "profiles": "examples/advanced/04_enumerate.py",
+    "record": "examples/advanced/01_recorder.py",
+    "playback": "examples/advanced/02_playback.py"
+  }
+}
