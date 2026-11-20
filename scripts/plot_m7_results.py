@@ -5,15 +5,160 @@ import json
 from pathlib import Path
 
 
+def update_comparison(root, output):
+    """Separate numerical update stability from final task performance."""
+    import matplotlib.pyplot as plt
+    diagnostic=json.loads((root/'update_diagnostic_summary.json').read_text())
+    old=json.loads((root/'ab_summary.json').read_text())
+    new=json.loads((root/'ab_lr1e5_summary.json').read_text())
+    fig,axes=plt.subplots(2,2,figsize=(11,7),layout='constrained')
+    colors={.001:'#bb493a',.0001:'#b18829',.00001:'#287d9b'}
+    for index,trial in enumerate(diagnostic['runs']):
+        for c in trial['comparisons']:
+            axes[0,0].plot(range(1,21),[x['after']['kl'] for x in c['steps']],color=colors[c['initial_lr']],alpha=.65,
+                          label=f"Initial LR {c['initial_lr']:g}" if index==0 else None)
+    axes[0,0].set(yscale='log',xlabel='Optimizer step in first update',ylabel='KL on entire rollout',title='Identical data, weights and RNG; 6 trials each')
+    axes[0,0].axhline(.01,color='black',ls='--',label='Adaptive target');axes[0,0].legend(fontsize=8)
+    for report,color,label in [(old,colors[.001],'Original 1e-3'),(new,colors[.00001],'Candidate 1e-5')]:
+        for i,r in enumerate(report['runs']):
+            axes[0,1].plot([x['iteration'] for x in r['history']],[x['policy_kl'] for x in r['history']],color=color,alpha=.65,label=label if i==0 else None)
+    axes[0,1].set(yscale='log',xlabel='PPO update',ylabel='KL after update',title='Full short run; same 6,144 transitions / trial')
+    axes[0,1].axhline(.01,color='black',ls='--');axes[0,1].legend(fontsize=8)
+    for ax,key,title in [(axes[1,0],'hit_rate','Paddle contact'),(axes[1,1],'legal_return_rate','Legal return')]:
+        for i,(report,color,label) in enumerate([(old,colors[.001],'Original'),(new,colors[.00001],'Candidate')]):
+            for j,group in enumerate(['A','B']):
+                rows=sorted([r for r in report['runs'] if r['group']==group],key=lambda r:r['training_seed'])
+                ax.scatter([j*2+i+(k-1)*.10 for k in range(len(rows))],[r['metrics'][key]*100 for r in rows],color=color,s=45,label=label if j==0 else None)
+        ax.axhline(new['zero_action_baseline'][key]*100,color='black',ls='--',label='Zero action')
+        ax.set(xticks=[0,1,2,3],xticklabels=['A old','A new','B old','B new'],ylim=(-5,105),ylabel='Same 16 evaluation serves (%)',title=title)
+        ax.grid(axis='y',alpha=.2);ax.legend(fontsize=8)
+    fig.suptitle('M7 learning-rate diagnostic: stability is not task success')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def net_diagnostic(root, output):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle, Circle
+    r=json.loads((root/'analysis/net_replay.json').read_text())
+    c=r['ball_config'];top=c['table_top_m']+c['net_height_m'];radius=c['radius_m']
+    fig,axes=plt.subplots(1,2,figsize=(11,4.5),layout='constrained')
+    colors={'A_7101':'#287d9b','B_7101':'#48986a','A_7103':'#bb493a','B_7103':'#b18829'}
+    for name,trial in r['runs'].items():
+        for i,row in enumerate(trial['records']):
+            points=[x for x in row['trace'] if x[0]>=row['release']['t'] and x[0]<row['end']['before']['t']]
+            points=[[row['release']['t']]+row['release']['ball'][:3]]+points+[[row['end']['before']['t']]+row['end']['before']['ball'][:3]]
+            for ax in axes:
+                ax.plot([v[1] for v in points],[v[3] for v in points],color=colors[name],alpha=.5,lw=.9,label=name if i==0 else None)
+    for ax in axes:
+        ax.axhline(top+radius,color='grey',ls=':',label='Net top + ball radius')
+        ax.add_patch(Rectangle((-c['net_thickness_m']/2,c['table_top_m']),c['net_thickness_m'],c['net_height_m'],color='black'))
+        ax.axhline(c['table_top_m'],color='black',lw=.8)
+        ax.set(xlabel='X toward opponent (m)',ylabel='Ball centre Z (m)');ax.grid(alpha=.2)
+    axes[0].set(xlim=(-1.3,.85),ylim=(.75,1.75),title='Measured outgoing flight; same 16 serves')
+    axes[0].legend(fontsize=8)
+    row=r['runs']['A_7103']['records'][9]
+    p=row['end']['before']['ball']
+    axes[1].add_patch(Circle((p[0],p[2]),radius,fill=False,color=colors['A_7103'],lw=2))
+    axes[1].set(xlim=(-.07,.07),ylim=(.84,1.03),title='Net detail: sphere extends beyond its centre')
+    axes[1].set_aspect('equal',adjustable='box')
+    axes[1].text(-.067,1.018,'Circle: A_7103, serve env9, before net hit',fontsize=7)
+    fig.suptitle('Seed 7103: slower forward flight and insufficient net clearance')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def serve_comparison(root, output):
+    """Plot all fixed checkpoints and legal landings from the frozen study."""
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    report=json.loads((root/'serve_study/final_summary.json').read_text())
+    if report['status']!='PASS':raise ValueError('Final evaluation incomplete')
+    fig,axes=plt.subplots(1,3,figsize=(13,4),layout='constrained')
+    colors={'narrow':'#287d9b','challenge':'#bb493a'}
+    for ax,evaluation in zip(axes[:2],['narrow','challenge']):
+        for index,condition in enumerate(colors):
+            rows=[r for r in report['runs'] if r['training_condition']==condition]
+            for offset,row in enumerate(rows):
+                rate=row['evaluations'][evaluation]['legal_return_rate']*100
+                ax.scatter(index+(offset-1)*.12,rate,color=colors[condition],s=45)
+                ax.annotate(str(row['seed']), (index+(offset-1)*.12,rate),xytext=(0,7),textcoords='offset points',fontsize=7,ha='center')
+        zero=report['baseline'][evaluation]['legal_return_rate']*100
+        ax.axhline(zero,color='black',ls='--',label=f'Zero action: {zero:g}%')
+        ax.set(xticks=[0,1],xticklabels=['Train +/-1.5 cm','Train +/-12 cm'],ylim=(-5,115),ylabel='Legal returns (%)',
+               title=f'Evaluate {evaluation}: same 32 serves')
+        ax.legend(fontsize=8);ax.grid(axis='y',alpha=.2)
+    ax=axes[2]
+    for condition,color in colors.items():
+        points=[ep['landing_xy_m'] for row in report['runs'] if row['training_condition']==condition
+                for ep in row['evaluations']['challenge']['episodes'] if ep['landing_xy_m'] is not None]
+        ax.scatter([p[0] for p in points],[p[1] for p in points],s=12,alpha=.5,color=color,label=f'Train {condition}')
+    zero=[ep['landing_xy_m'] for ep in report['baseline']['challenge']['episodes'] if ep['landing_xy_m'] is not None]
+    ax.scatter([p[0] for p in zero],[p[1] for p in zero],s=16,marker='x',color='black',label='Zero action')
+    ax.add_patch(Rectangle((.55,-.2),.4,.4,fill=False,color='green',ls='--',label='Target box'))
+    ax.set(xlim=(0,1.37),ylim=(-.7625,.7625),xlabel='Opponent side X (m)',ylabel='Y (m)',title='Challenge: legal landings only')
+    ax.legend(fontsize=7);ax.grid(alpha=.2)
+    fig.suptitle('Single factor: training serve width | 6,144 transitions per seed | rally net contact v2')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def guidance_comparison(root, output):
+    """Show A/B outcomes separately from the development feasibility witness."""
+    import matplotlib.pyplot as plt
+    report=json.loads((root/'m74/final_summary.json').read_text())
+    development=json.loads((root/'m74/development.json').read_text())
+    if report['status']!='PASS' or development['status']!='PASS':raise ValueError('Incomplete study')
+    fig,axes=plt.subplots(1,3,figsize=(13,4),layout='constrained')
+    colors={'A':'#287d9b','B':'#bb493a'}
+    for ax,condition in zip(axes[:2],['legacy','active']):
+        for index,group in enumerate(colors):
+            rows=[r for r in report['runs'] if r['group']==group]
+            for offset,row in enumerate(rows):
+                rate=row['evaluations'][condition]['legal_return_rate']*100
+                x=index+(offset-1)*.12
+                ax.scatter(x,rate,color=colors[group],s=45)
+                ax.annotate(str(row['seed']),(x,rate),xytext=(0,7),textcoords='offset points',fontsize=7,ha='center')
+        zero=report['baseline'][condition]['legal_return_rate']*100
+        ax.axhline(zero,color='black',ls='--',label=f'Zero action: {zero:g}%')
+        ax.set(xticks=[0,1],xticklabels=['A: basic reward','B: + hit guidance'],ylim=(-5,115),ylabel='Legal returns (%)',
+               title=f'{condition.capitalize()} serves: same 32 per policy')
+        ax.legend(fontsize=8);ax.grid(axis='y',alpha=.2)
+    for mode,color,label in [('zero','#777777','Zero action'),('script','#48986a','Feasible joint motion')]:
+        for index,trace in enumerate(development['runs'][mode]['traces'].values()):
+            points=[]
+            for row in trace:
+                if points and row[0]<=points[-1][0]:break  # Exclude automatic reset.
+                points.append(row)
+            axes[2].plot([r[0] for r in points],[r[3] for r in points],color=color,alpha=.5,lw=1,label=label if index==0 else None)
+    axes[2].set(xlabel='Time after serve (s)',ylabel='Racket TCP height (m)',title='Development witnesses (not PPO)')
+    axes[2].legend(fontsize=8);axes[2].grid(alpha=.2)
+    fig.suptitle('M7.4: 6,144 transitions per seed | Joint actions | PACE apex guidance unchanged')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runs',type=Path,default=Path('.agents/runs/foundation/m7'))
     parser.add_argument('--output',type=Path,default=Path('doc/notes/images/m7_diagnostic.png'))
+    parser.add_argument('--update-comparison',action='store_true',help='Plot paired update diagnostic and subsequent short run')
+    parser.add_argument('--net-diagnostic',action='store_true',help='Plot measured release-to-net replay')
+    parser.add_argument('--serve-comparison',action='store_true',help='Plot frozen serve-width comparison and legal landings')
+    parser.add_argument('--guidance-comparison',action='store_true',help='Plot M7.4 A/B and separate feasibility witnesses')
     args=parser.parse_args()
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     root=args.runs
+    if args.guidance_comparison:
+        guidance_comparison(root,args.output)
+        return
+    if args.serve_comparison:
+        serve_comparison(root,args.output)
+        return
+    if args.net_diagnostic:
+        net_diagnostic(root,args.output)
+        return
+    if args.update_comparison:
+        update_comparison(root,args.output)
+        return
     direct=json.loads((root/'control_direct.json').read_text())
     fixed=json.loads((root/'control.json').read_text())
     ab=json.loads((root/'ab_summary.json').read_text())

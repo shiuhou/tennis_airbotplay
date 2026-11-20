@@ -87,10 +87,16 @@ def interactive(control, app):
 
 
 def dispatch(args, app):
+    if args.mode == "pace-eval":
+        from train_pace import reevaluate
+        return reevaluate(args.device, args.pace_envs, args.pace_checkpoints, args.pace_output)
     if args.mode in ('pace-smoke', 'pace-ab'):
         from train_pace import run
-        return run(args.device, args.pace_envs, 'smoke' if args.mode=='pace-smoke' else 'ab', args.pace_output)
+        return run(args.device, args.pace_envs, 'smoke' if args.mode=='pace-smoke' else 'ab', args.pace_output, args.pace_learning_rate, args.pace_serve_y_half_range, args.pace_groups, args.pace_serve_z)
     if args.mode == "pace-check":
+        if args.pace_check == "update":
+            from pace_update import diagnose
+            return diagnose(args.device, args.pace_envs, args.pace_output)
         from pace_m7 import verify
         return verify(args.device, args.pace_envs, args.pace_check)
     if args.mode == "return-demo":
@@ -171,11 +177,16 @@ def dispatch(args, app):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return", "return-demo", "pace-data", "pace-check", "pace-smoke", "pace-ab"], default="interactive")
+    parser.add_argument("--mode", choices=["verify", "contact", "demo", "state", "interactive", "ball", "shot", "prediction", "strike", "impact", "return", "return-demo", "pace-data", "pace-check", "pace-smoke", "pace-ab", "pace-eval"], default="interactive")
     parser.add_argument("--report")
     parser.add_argument("--pace-output", default=".agents/runs/foundation/m7/smoke")
+    parser.add_argument("--pace-checkpoints", help="Existing A/B run directory for frozen policy re-evaluation")
     parser.add_argument("--pace-envs", type=int, default=2)
-    parser.add_argument("--pace-check", choices=["lifecycle", "control", "reference", "parity"], default="lifecycle")
+    parser.add_argument("--pace-serve-z", type=float, help="Initial serve height in metres; recorded experiment override, not a teacher change")
+    parser.add_argument("--pace-serve-y-half-range", type=float, help="Single-factor serve Y range override in metres; leaves M5 config unchanged")
+    parser.add_argument("--pace-groups", nargs="+", choices=["A","B"], help="Explicit groups for a controlled short experiment")
+    parser.add_argument("--pace-learning-rate", type=float, help="Explicit PPO initial-rate experiment; recorded in protocol/checkpoint")
+    parser.add_argument("--pace-check", choices=["lifecycle", "control", "reference", "parity", "update"], default="lifecycle")
     parser.add_argument("--pace-split", choices=["all", "heldout"], default="all")
     parser.add_argument("--return-split", choices=["development", "validation"], default="development")
     parser.add_argument("--ball-hz", type=int, choices=[240, 480, 960, 1920], help="Physics frequency for isolated ball acceptance")
@@ -207,6 +218,10 @@ def main():
     AppLauncher.add_app_launcher_args(parser)
     parser.set_defaults(device="cpu")
     args = parser.parse_args()
+    if (args.pace_serve_z is not None or args.pace_learning_rate is not None or args.pace_serve_y_half_range is not None or args.pace_groups is not None) and args.mode not in ("pace-smoke", "pace-ab"):
+        parser.error("PPO experiment overrides are only valid for pace-smoke / pace-ab")
+    if args.mode == "pace-eval" and not args.pace_checkpoints:
+        parser.error("pace-eval requires --pace-checkpoints")
     args.enable_cameras = args.enable_cameras or args.mode in ("demo", "return-demo")
     if args.mode in ("verify", "contact") and args.obstacles:
         parser.error("Acceptance modes supply their own test obstacles.")

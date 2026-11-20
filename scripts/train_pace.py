@@ -43,13 +43,13 @@ def evaluate(env,policy,seed,episodes):
                 if len(selected)==env.n:break
         if len(selected)!=env.n:raise RuntimeError('Incomplete policy evaluation')
         rows.extend(selected[i] for i in range(env.n))
-    return dict(total=len(rows),hit_rate=sum(r['hit'] for r in rows)/len(rows),
+    return dict(event_rules=env.events.rules,total=len(rows),hit_rate=sum(r['hit'] for r in rows)/len(rows),
                 legal_return_rate=sum(r['outcome']=='legal_return' for r in rows)/len(rows),
                 target_success_rate=sum(r['target_success'] for r in rows)/len(rows),
                 outcomes={name:sum(r['outcome']==name for r in rows) for name in sorted(set(r['outcome'] for r in rows))},episodes=rows)
 
 
-def run(device,num_envs,mode,destination):
+def run(device,num_envs,mode,destination,learning_rate=None,serve_y_half_range_m=None,groups=None,serve_z_m=None):
     from airbot_tt.pace_env import PaceEnv
     from pace_m7 import source_hashes
     destination=Path(destination)
@@ -58,13 +58,24 @@ def run(device,num_envs,mode,destination):
         if report['status']!='PASS' or report.get('source_sha256')!=source_hashes():
             raise RuntimeError(f'M7 gate not current/PASS: {name}')
     ActorCritic,PPO=original_ppo()
-    cfg=json.loads((ROOT/'configs/pace_rl.json').read_text());p=cfg['ppo']
+    cfg=json.loads((ROOT/'configs/pace_rl.json').read_text())
+    if learning_rate is not None:
+        if not np.isfinite(learning_rate) or learning_rate<=0:raise ValueError('Learning rate must be finite and positive')
+        cfg['ppo']['learning_rate']=learning_rate
+    if serve_y_half_range_m is not None:
+        if not np.isfinite(serve_y_half_range_m) or serve_y_half_range_m<0:raise ValueError('Invalid serve Y half range')
+        cfg['serve_y_half_range_m']=float(serve_y_half_range_m)
+    if serve_z_m is not None:
+        if not np.isfinite(serve_z_m) or serve_z_m<=0:raise ValueError('Invalid serve Z')
+        cfg['serve_z_m']=float(serve_z_m)
+    p=cfg['ppo']
     # Fixed small diagnostic budget; smoke never establishes learning effectiveness.
     iterations=4 if mode=='smoke' else cfg['diagnostic_iterations']
     seeds=cfg['seeds'][:1] if mode=='smoke' else cfg['seeds']
-    groups=['A'] if mode=='smoke' else ['A','B']
+    groups=list(groups) if groups is not None else (['A'] if mode=='smoke' else ['A','B'])
+    if not groups or len(set(groups))!=len(groups) or any(g not in ('A','B') for g in groups):raise ValueError('Expected unique A/B groups')
     destination.mkdir(parents=True,exist_ok=False)
-    env=PaceEnv(num_envs,device);torch.set_num_threads(1)
+    env=PaceEnv(num_envs,device,serve_y_half_range_m=serve_y_half_range_m,serve_z_m=serve_z_m);torch.set_num_threads(1)
     clock=time.monotonic();runs=[]
     baseline=None
     if mode=='ab':
@@ -147,3 +158,48 @@ def run(device,num_envs,mode,destination):
             print(json.dumps({k:result[k] for k in ('group','training_seed','metrics','transitions','seconds')}),flush=True)
     return dict(status='PASS',scope=mode+' diagnostic, not formal M7 five-group research',runs=runs,seconds=time.monotonic()-clock,
                 scientific_conclusion='INCONCLUSIVE',zero_action_baseline=baseline,source_sha256=source_hashes())
+
+
+def reevaluate(device,num_envs,source,destination):
+    """Re-score frozen policies under current event rules; never construct PPO."""
+    from airbot_tt.pace_env import PaceEnv
+    from pace_m7 import source_hashes
+    source=Path(source);destination=Path(destination)
+    protocol=json.loads((source/'protocol.json').read_text())
+    cfg=protocol['cfg']
+    base_cfg=dict(cfg);serve_y_half_range_m=base_cfg.pop('serve_y_half_range_m',None)
+    serve_z_m=base_cfg.pop('serve_z_m',None)
+    if protocol['num_envs']!=num_envs or base_cfg!=json.loads((ROOT/'configs/pace_rl.json').read_text()):
+        raise ValueError('Re-evaluation requires the same environment count and effective config')
+    destination.mkdir(parents=True,exist_ok=False)
+    ActorCritic,_=original_ppo();env=PaceEnv(num_envs,device,serve_y_half_range_m=serve_y_half_range_m,serve_z_m=serve_z_m);torch.set_num_threads(1)
+    started=time.monotonic();results=[];before_hashes=source_hashes()
+    class Zero:
+        def act_inference(self,obs):return torch.zeros((len(obs),6),device=obs.device)
+    zero=evaluate(env,Zero(),7201,16)
+    for seed in protocol['seeds']:
+        for group in protocol['groups']:
+            trial=source/f'{group}_{seed}';path=trial/'policy.pt'
+            old=json.loads((trial/'result.json').read_text())
+            checkpoint_hash=hashlib.sha256(path.read_bytes()).hexdigest()
+            if checkpoint_hash!=old['checkpoint_sha256']:raise RuntimeError('Checkpoint changed')
+            checkpoint=torch.load(path,map_location=device,weights_only=False)
+            if checkpoint['cfg']!=cfg or checkpoint['seed']!=seed or checkpoint['group']!=group:
+                raise ValueError('Checkpoint/protocol mismatch')
+            p=cfg['ppo']
+            policy=ActorCritic(115,200,6,actor_hidden_dims=p['hidden'],critic_hidden_dims=p['hidden'],activation='elu',init_noise_std=p['init_std']).to(device)
+            policy.load_state_dict(checkpoint['policy']);env.group=group
+            evaluation_started=time.monotonic();result=evaluate(env,policy,7201,16)
+            # No optimizer or state updates; verify tensors stayed identical.
+            assert all(torch.equal(value,checkpoint['policy'][key]) for key,value in policy.state_dict().items())
+            changed=[dict(env=a['env'],old=a['outcome'],new=b['outcome'],net_touched=b['net_touched'])
+                     for a,b in zip(old['evaluation']['episodes'],result['episodes']) if a['outcome']!=b['outcome']]
+            row=dict(group=group,training_seed=seed,checkpoint_sha256=checkpoint_hash,
+                     old_metrics=old['metrics'],evaluation=result,changed_outcomes=changed,evaluation_seconds=time.monotonic()-evaluation_started)
+            (destination/f'{group}_{seed}.json').write_text(json.dumps(row,indent=2)+'\n');results.append(row)
+            print('REEVALUATE',group,seed,result['outcomes'],flush=True)
+    assert before_hashes==source_hashes(),'Source changed during evaluation'
+    report=dict(status='PASS',event_rules=env.events.rules,scope='frozen checkpoint re-evaluation, no training',
+                source_directory=str(source),source_sha256=before_hashes,zero_action_baseline=zero,runs=results,seconds=time.monotonic()-started)
+    (destination/'results.json').write_text(json.dumps(report,indent=2)+'\n')
+    return report

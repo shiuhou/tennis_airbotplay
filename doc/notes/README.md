@@ -37,4 +37,4 @@ PACE→AIRBOT仍是主線。M5證明我們有可用的仿真與擊球基線；M6
 
 - [研究流程採納](research_workflow.md)：公平比較、分組驗證、可追溯執行、離線分析，以及 M6 訓練／評測／畫圖分離；涵蓋後續 PPO、目標條件化與 sim-to-real。
 
-- [M7：環境、控制與 PPO 初始整合](m7_notes.md)：從 action 到 PhysX／事件／terminal observation／GAE，說明控制踩坑與 A／B 診斷如何判讀。
+- [M7：環境、控制與 PPO 初始整合](m7_notes.md)：從 action 到 PhysX／事件／terminal observation／GAE，說明控制踩坑、失敗重播、首次更新學習率診斷、A／B 對照及第三seed拍速／網頂診斷，以及擦網規則修正後的原模型重評；第13節記錄碰撞LP修正、零動作對照與單變因來球實驗；第14節開始M7.4的可達接球題目與PACE擊球引導對照。

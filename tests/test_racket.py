@@ -33,6 +33,33 @@ class RacketTests(unittest.TestCase):
         cls.model = racket_model(ROOT/'configs/racket.json')
         cls.q = np.array([.25, -.24, .34, .2, .35, -.22])
 
+    def test_captured_link3_link5_lp_is_translation_invariant(self):
+        # Actual failing left-serve positioning pose (M7 collision_diagnostic).
+        q=np.array([-.004965776538856874,-1.626696610748847,.8330069196512447,
+                    1.5684060736171415,1.6664005870412317,-1.5670463286042238])
+        checker=CollisionChecker(self.model,base_position=[-1.275,0,.76])
+        frames=self.model.frames(q)
+        hulls=[]
+        for index in (3,5):
+            frame=frames[index].copy();frame[:3,3]+=checker.base_position
+            hulls.append(checker._shapes[index][0].transform(frame))
+        a,b=hulls
+        for shift in ([0,0,0],[2,-3,4],[1000,-2000,3000]):
+            transform=np.eye(4);transform[:3,3]=shift
+            self.assertFalse(a.transform(transform).overlaps(b.transform(transform)))
+            self.assertTrue(a.transform(transform).overlaps(a.transform(transform)))
+
+    def test_collision_margin_and_unknown_solver_remain_fail_closed(self):
+        from airbot_tt.collision import _Hull,BOX_CORNERS
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        a=_Hull.from_points(BOX_CORNERS*.1)
+        self.assertTrue(a.overlaps(_Hull.from_points(BOX_CORNERS*.1+[.10099,0,0])))
+        self.assertFalse(a.overlaps(_Hull.from_points(BOX_CORNERS*.1+[.10101,0,0])))
+        with patch('airbot_tt.collision.linprog',return_value=SimpleNamespace(status=4,message='numerical failure')):
+            with self.assertRaisesRegex(RuntimeError,'Collision feasibility'):
+                a.overlaps(a)
+
     def test_loaded_mass_and_physical_inertia(self):
         model = self.model
         self.assertEqual(len(model.links), 9)

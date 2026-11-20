@@ -120,3 +120,15 @@ H0–H4先用相符版本的官方服務／SDK／範例，確認副作用後才�
 初始 A／B 使用相同 115 維 actor、200 維 critic，無 MLP 提示。發球 reset 時 CPU 參考教師求 apex，物理子步依相位／剩餘時間遮罩並累積引導；不宣稱已完成 batched GPU teacher 或在線 predictor。critic 教師資訊兩組共用。
 
 `train_pace.py` 校驗固定 PACE 原檔後直接載 ActorCritic／PPO／Storage，僅處理 AIRBOT rollout、terminal-value bootstrap、保存與評測。使用 no_grad 讓 Isaac 狀態緩衝可在不同階段更新；不在可變仿真緩衝上混用 InferenceMode。評測只取 actor 均值，按預先指定的 env／serve 收齊結果。原版更新器不改寫；觀測歷史、動作 clip、reset 與稀疏事件屬明確機械臂適配。
+
+首次更新診斷由 `tests/pace_update.py` 使用原 PPO 的深拷貝與 optimizer hooks 完成，不改上游 update。各候選共用同一 rollout、初始權重與更新 RNG；先核對重算的 mu／sigma／log-prob，再記每次 optimizer step 前後的整批 KL 和裁切後梯度範數。診斷以獨立來源／結果留存，不寫回訓練權重。訓練的可選初始 learning-rate 覆寫會進入實際 cfg、protocol 和 checkpoint；reward、action、teacher 仍使用原設定。
+
+`ShotEvents`／`TensorShotEvents`共用`rally_net_contact_v2`規則識別：net只記接觸，跨網判定先於同子步落桌，取消net接觸及截面高度的立即終止。tensor保留歷史outcome編號3以讀舊報告，現行不再發出該結果；net_touched獨立重置並寫入episode。PhysX網碰撞材質／幾何不變，解析預測器的net_hit／unsupported仍表示預測範圍終止，不是任務失敗。`pace-eval`驗證checkpoint雜湊與完整cfg，使用原均值策略／7201來球，只重評不建立optimizer；報告包含規則版本、新舊分類及實測episode時長。
+
+## 凸包碰撞預檢與單變因來球對照
+
+`_Hull.overlaps` 以原半空間與 clearance/2 膨脹，最大化共同平面餘量ρ（`A x + ρ ≤ b`）。最優ρ≥−1e-7m保守判作碰撞；非最優／非有限結果拋錯。使用SciPy官方HiGHS，無失敗放行或重試分支。一般1mm、工具手腕0.5mm裕度不變；ρ不是歐氏距離。此形式取代零目標可行性LP，以避免已重現的分離密集凸包Unknown；數值／完整M3驗證見M7筆記第13節。
+
+M7短對照允許透過命令列覆寫發球Y半範圍，記入有效設定與checkpoint，只改PaceEnv記憶體副本，不改M5檔案。訓練可選A或B子集；比較範圍時固定A。最終評測按同一seed重設各模型及zero，記錄合法落點XY，故障不剔除；效用門檻以SPEC為準。
+
+M7.4的發球中心高度覆寫由`--pace-serve-z`進入有效cfg及checkpoint，PaceEnv只改記憶體內的serve_position_m[2]，重新評測讀回原值。這是版本化任務輸入，不改M5設定、控制包絡或教師定義。動態可達性見證利用既有球預測／IK／Trajectory，再走正常關節動作介面；只供開發驗證，不是Actor的一部分或新的引導點。

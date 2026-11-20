@@ -129,3 +129,7 @@ M6由`scripts/prepare_pace.py`按`configs/pace_sources.json`下載／校驗固�
 ## M7 官方接口使用（2026-11-19）
 
 直接使用既有固定 fdb192f8 PACE 的 ActorCritic、PPO 與 RolloutStorage，匯入前按 pace_sources.json 核對原檔；未改上游程式。向量場景與 reset 契約核對固定 Isaac image 內 Lab 2.1 的 `scripts/tutorials/02_scene/create_scene.py`、`envs/direct_rl_env.py`、`scene/interactive_scene.py` 與 articulation API。重用 InteractiveScene 的 cloning／collision filtering，末態保存與 bootstrap 由 AIRBOT 薄接合處理。現有來源／授權規則不變，未移入 CartPole 演算法或新依賴堆疊。
+
+### 碰撞LP數值診斷（2026-11-19）
+
+核對 [SciPy 官方 linprog／HiGHS 文件](https://docs.scipy.org/doc/scipy/reference/optimize.linprog-highs.html)：`highs`自動選擇dual simplex或IPM、預設presolve與1e-7 primal／dual可行性容差。實際容器SciPy 1.15.2；未升級或修改上游。最大共同半空間餘量是本機對等價凸包相交問題的改寫，不是官方文件提供的碰撞專用演算法；幾何、重現與限制見[M7筆記第13節](../../doc/notes/m7_notes.md)。

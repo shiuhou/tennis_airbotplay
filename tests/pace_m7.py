@@ -136,7 +136,7 @@ def reference(device):
         row=task.step()
         if (i+1)%20==0 or row['outcome'] is not None:trace.append(dict(time_s=task.time,state=task.state.tolist(),phase=task.events.phase))
         if row['outcome'] is not None:break
-    return dict(status='PASS',outcome=task.events.outcome,events=task.events.events,trace=trace,scope='Old SingleShot zero-action centre-ready reference')
+    return dict(status='PASS',event_rules=task.events.rules,outcome=task.events.outcome,events=task.events.events,trace=trace,scope='Old SingleShot zero-action centre-ready reference')
 
 
 def parity(env):
@@ -157,7 +157,7 @@ def parity(env):
         key=round(row['time_s'],5)
         if key in a:diff.append(np.linalg.norm(np.array(row['state'][:3])-a[key]['state'][:3]))
     outcome=env.events.names[int(env.events.outcome[0])]
-    checks=dict(outcome=outcome==reference['outcome'],position=bool(diff and max(diff)<.01),
+    checks=dict(rule_version=reference.get('event_rules')==env.events.rules,outcome=outcome==reference['outcome'],position=bool(diff and max(diff)<.01),
                 end_time=abs(rows[-1]['time_s']-reference['trace'][-1]['time_s'])<.01)
     return dict(status='PASS' if all(checks.values()) else 'FAIL',checks=checks,outcome=outcome,reference_outcome=reference['outcome'],
                 max_position_difference_m=float(max(diff)) if diff else None,end_time_s=rows[-1]['time_s'],trace=rows)
@@ -166,7 +166,7 @@ def parity(env):
 def source_hashes():
     import hashlib
     from airbot_tt.config import ROOT
-    names=['src/airbot_tt/'+n+'.py' for n in ['pace_control','pace_env','runtime','ball_scene','single_shot','pace_guidance','planning','trajectory']]
+    names=['src/airbot_tt/'+n+'.py' for n in ['pace_control','pace_env','runtime','ball_scene','single_shot','pace_guidance','planning','trajectory','collision']]
     names+=['configs/'+n+'.json' for n in ['pace_rl','pace','strike','single_shot','ball','racket']]
     return {name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in names}
 

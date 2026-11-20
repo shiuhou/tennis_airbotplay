@@ -12,6 +12,7 @@ from .config import BASE_POSITION, RACKET_WRIST_CLEARANCE_M
 from .kinematics import origin
 
 CLEARANCE_M = 0.001
+LP_FEASIBILITY_TOL_M = 1e-7
 BOX_CORNERS = np.array([[x, y, z] for x in (-0.5, 0.5) for y in (-0.5, 0.5) for z in (-0.5, 0.5)])
 
 
@@ -84,13 +85,24 @@ class _Hull:
         ):
             return False
         planes = np.vstack([self.planes, other.planes])
+        # Maximise a common half-space margin. Unlike a zero-objective
+        # feasibility LP this always has feasible points (negative margin),
+        # so separated dense hulls need not be resolved as an infeasible basis.
+        # Intersection exists iff the optimum margin is nonnegative.
         result = linprog(
-            np.zeros(3), A_ub=planes[:, :3], b_ub=-planes[:, 3] + clearance / 2,
-            bounds=[(None, None)] * 3, method="highs",
+            [0., 0., 0., -1.],
+            A_ub=np.c_[planes[:, :3], np.ones(len(planes))],
+            b_ub=-planes[:, 3] + clearance / 2,
+            bounds=[(None, None)] * 4, method="highs",
+            options={"primal_feasibility_tolerance": LP_FEASIBILITY_TOL_M,
+                     "dual_feasibility_tolerance": LP_FEASIBILITY_TOL_M},
         )
-        if result.status not in (0, 2):
+        if result.status != 0 or not np.isfinite(result.x).all():
             raise RuntimeError(f"Collision feasibility calculation failed: {result.message}")
-        return result.success
+        # The existing solver's tolerance is a conservative boundary band,
+        # never a reason to accept an uncertain gap as collision-free.
+        return bool(result.x[3] >= -LP_FEASIBILITY_TOL_M)
+
 
 
 class CollisionChecker:

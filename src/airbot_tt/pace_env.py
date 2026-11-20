@@ -22,10 +22,18 @@ from .pace_guidance import apex_teacher
 
 
 class PaceEnv:
-    def __init__(self,num_envs=1,device='cuda:0',seed=7101,group='A',decimation=None):
+    def __init__(self,num_envs=1,device='cuda:0',seed=7101,group='A',decimation=None,serve_y_half_range_m=None,serve_z_m=None):
         if group not in ('A','B'): raise ValueError('Only initial A/B integration is implemented')
         self.cfg=json.loads((ROOT/'configs/pace_rl.json').read_text())
         self.strike=json.loads((ROOT/'configs/strike.json').read_text())
+        if serve_y_half_range_m is not None:
+            if not np.isfinite(serve_y_half_range_m) or serve_y_half_range_m<0:
+                raise ValueError('Serve Y half range must be finite and nonnegative')
+            self.strike['position_half_range_m'][1]=float(serve_y_half_range_m)
+        if serve_z_m is not None:
+            if not np.isfinite(serve_z_m) or serve_z_m<=0:
+                raise ValueError('Serve Z must be finite and positive')
+            self.strike['serve_position_m'][2]=float(serve_z_m)
         self.shot=json.loads((ROOT/'configs/single_shot.json').read_text())
         self.guidance=json.loads((ROOT/'configs/pace.json').read_text())['reward']
         self.n=num_envs;self.device=device;self.group=group
@@ -206,6 +214,8 @@ class PaceEnv:
         ids=done.nonzero().flatten()
         for i in ids.cpu().tolist():
             row=dict(env=i,serve=int(self.serve_id[i]),outcome=self.events.names[int(self.events.outcome[i])],hit=bool(self.events.hit[i]),
+                     net_touched=bool(self.events.net_touched[i]),duration_s=float(self.elapsed[i]),
+                     landing_xy_m=self.events.landing[i,:2].cpu().tolist() if self.events.outcome[i]==6 else None,
                      min_ball_distance_m=float(self.distance_min[i]),guidance_valid_s=float(self.valid_seconds[i]),
                      plateau_s=float(self.plateau_seconds[i]),guidance_sum=float(self.episode_guidance[i]),reward=float(self.episode_reward[i]),
                      target_success=bool(self.events.outcome[i]==6 and torch.all(abs(self.events.landing[i,:2]-self.tensor([.75,0]))<=self.strike['goal_half_width_m'])),

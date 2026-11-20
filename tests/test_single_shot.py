@@ -53,7 +53,7 @@ class ShotEventTests(unittest.TestCase):
         s.reset();self.assertEqual(s.events,[]);self.assertIsNone(s.outcome)
 
     def test_faults_and_contact_debouncing(self):
-        for contact,outcome in [('paddle','illegal_hit'),('net','net'),('fixer','unexpected_contact'),('arm','unexpected_contact')]:
+        for contact,outcome in [('paddle','illegal_hit'),('net',None),('fixer','unexpected_contact'),('arm','unexpected_contact')]:
             s=ShotEvents(load_ball_config(),2)
             self.assertEqual(s.update(.1,[-.5,0,1,1,0,0],[contact]),outcome)
         s=ShotEvents(load_ball_config(),2)
@@ -70,4 +70,5 @@ class ShotEventTests(unittest.TestCase):
         s.reset();s.update(.1,[-.4,0,.78,-3,0,2],['table'])
         s.update(.2,[-.5,0,1,-3,0,0]);s.update(.3,[-1,0,1,3,0,1],['paddle'])
         s.update(.4,[-.1,0,.85,3,0,0])
-        self.assertEqual(s.update(.5,[.1,0,.85,3,0,0]),'net')
+        self.assertIsNone(s.update(.5,[.1,0,.85,3,0,0]))
+        self.assertEqual(s.phase,'crossed')

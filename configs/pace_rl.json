@@ -25,7 +25,7 @@
     "steps": 24,
     "epochs": 5,
     "minibatches": 4,
-    "learning_rate": 0.001,
+    "learning_rate": 0.00001,
     "entropy": 0.006,
     "clip": 0.2,
     "init_std": 0.3,

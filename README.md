@@ -2,7 +2,7 @@
 
 AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、非零速度定時擊球、限定三目標scripted回球、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
-研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6已完成離線物理引導與predictor驗證，M7的PPO尚未實作，即時規劃加速不作為其前提。
+研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6已完成離線物理引導與predictor驗證，M7已接通PPO並進行小規模A／B診斷，即時規劃加速不作為其前提。
 
 過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes/README.md)。論文、開源專案、閱讀狀態及授權統一記錄於 [研究參考與來源](.agents/docs/SOURCES.md)。
 
@@ -140,7 +140,7 @@ M5也提供實際仿真慢放影片入口：`--mode return-demo --video .agents/
 
 ## PACE 原始方法學習
 
-PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.md)，再對照[獎勵公式與算例](doc/notes/pace_rewards.md)。M6已完成官方MLP的獨立監督訓練、教師／獎勵及接入契約；actor／critic與PPO尚未實作。完整方法、失敗與限制見[M6筆記](doc/notes/m6_notes.md)。
+PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.md)，再對照[獎勵公式與算例](doc/notes/pace_rewards.md)。M6已完成官方MLP的獨立監督訓練、教師／獎勵及接入契約；M7已接通actor／critic與PPO的短跑診斷。完整方法、失敗與限制見[M6筆記](doc/notes/m6_notes.md)。
 
 ```bash
 ./verify_m6.sh --collect .agents/runs/foundation/m6/new_trial  # 校驗官方來源、採集PhysX資料、測試並訓練／評測predictor
@@ -165,3 +165,37 @@ M6資料、checkpoint與報告留在`.agents/runs/foundation/m6/`。驗收限定
 ## M7 初始 PPO 整合與 A／B 診斷
 
 使用固定 PACE ActorCritic／PPO 與六軸向量環境。物理 960 Hz、策略 48 Hz；先通過場景對照、reset／timeout 和動作追蹤，再啟動短試跑。步驟與完整命令見 [M7 筆記](doc/notes/m7_notes.md)，包含控制失敗原因、修正、資料流與結果限制。這不是五組正式研究或真機控制入口。
+
+首次更新異常可用以下入口檢查（需要已下載並校驗的 PACE 來源、Isaac 容器及 GPU）：
+
+```bash
+./run.sh --mode pace-check --pace-check update --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/update_check --report .agents/runs/foundation/m7/update_check.json
+```
+
+此診斷收集 A／B 三個固定 seeds 的首批經驗，從相同權重與 RNG 比較三個初始學習率，輸出資料一致性與逐 minibatch KL。它會執行短暫仿真及更新診斷，不是只讀繪圖，也不是完整訓練。輸出目錄必須未存在。`pace-smoke`／`pace-ab` 可用 `--pace-learning-rate` 明確指定單變因實驗值；實際設定寫入 protocol 和 checkpoint，未指定時讀 `configs/pace_rl.json`（目前預設初始學習率 `1e-5`）。
+
+
+回球採 `rally_net_contact_v2`：擦網不立即失敗，繼續追蹤實際落桌／出界／超時。原模型的只評測入口如下，不建立optimizer、不重訓；需本地原checkpoint，輸出目錄不可已存在：
+
+```bash
+./run.sh --mode pace-eval --pace-checkpoints .agents/runs/foundation/m7/ab_lr1e5 --pace-output .agents/runs/foundation/m7/new_net_eval --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/new_net_eval.json
+```
+
+新舊規則結果見[M7筆記第12節](doc/notes/m7_notes.md)，不要直接比較不同規則下的成功率。
+
+
+受控來球對照可在完成當前來源的 lifecycle／control／parity 關卡後，固定A只改Y半範圍。以下會真正啟動三個seed的短訓練，輸出目錄必須未存在：
+
+```bash
+./run.sh --mode pace-ab --pace-groups A --pace-serve-y-half-range 0.12 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/serve_challenge --report .agents/runs/foundation/m7/serve_challenge.json
+```
+
+用 `0.015` 和另一個輸出目錄可跑窄分布對照。兩者各6144 transitions/seed，M5原設定不改。訓練內建seed7201評測屬開發診斷；[M7筆記第13節](doc/notes/m7_notes.md)另記凍結規則後的共同評測、零動作對照與效用門檻。完整M3的HiGHS預檢錯誤已由等價的最大共同平面餘量LP修正，未放寬碰撞間距。
+
+M7.4首段A/B使用經有限動態見證驗證的初階接球題目：來球初始高度中心2.3m、左右±1.5cm。可用 `--pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-groups A B` 啟動同預算對照；完整例子：
+
+```bash
+./run.sh --mode pace-ab --pace-groups A B --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/m74_new_ab --report .agents/runs/foundation/m7/m74_new_ab.json
+```
+
+這會真正啟動六次短訓練，要求當前來源的lifecycle／control／parity已PASS，輸出目錄不可已存在。高度寫入protocol／checkpoint，不改M5原檔；`pace-eval`會讀回有效高度，但其內建7201評測仍是開發診斷。前置失敗、可達性範圍與研究限制見[M7筆記第14節](doc/notes/m7_notes.md)。

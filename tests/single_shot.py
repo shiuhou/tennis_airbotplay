@@ -14,7 +14,7 @@ from foundation import _check
 def verify(device='cpu'):
     task=SingleShot(device)
     control=task.control
-    report=dict(checks={},episodes=[],scope='M3 single-shot infrastructure; no learned or planned hitting policy',
+    report=dict(event_rules=task.events.rules,checks={},episodes=[],scope='M3 single-shot infrastructure; no learned or planned hitting policy',
                 config=task.config,source_sha256={})
     for path in ['configs/single_shot.json','configs/ball.json','src/airbot_tt/shot_scene.py',
                  'src/airbot_tt/single_shot.py','src/airbot_tt/runtime.py','src/airbot_tt/ball_scene.py',
@@ -113,11 +113,13 @@ def verify(device='cpu'):
     with _check(report,'feasible_and_rejected_serve_set'):
         assert any(e['feasible_candidates'] for e in report['episodes']), 'No deadline-feasible serves'
         assert not next(e for e in report['episodes'] if e['serve_id']=='too_wide')['feasible_candidates']
-    with _check(report,'physical_net_failure'):
+    with _check(report,'physical_net_contact_then_resolution'):
         task.reset(dict(position_m=[-.15,.5,.87],velocity_m_s=[3,0,0]))
         while task.events.outcome is None:
             task.step()
-        assert task.events.outcome=='net', task.events.outcome
+        assert task.events.net_touched, 'Net contact was not observed'
+        assert any(e['kind']=='net_contact' for e in task.events.events)
+        assert task.events.outcome in ('wrong_bounce','miss','out','timeout'), task.events.outcome
     with _check(report,'physical_fixer_failure'):
         centre=control.model.tool_geometry['components']['fixer']['center_of_mass_link6_m']
         position=(control.model.frames(control.initial)[6] @ [*centre,1])[:3]+task.config['base_position_m']
