@@ -1,0 +1,77 @@
+{
+  "version": "m4-table-mount-v3",
+  "base_position_m": [
+    -1.275,
+    0,
+    0.76
+  ],
+  "initial_q_rad": [
+    1.2423771336088914e-06,
+    -1.5387845595965712,
+    0.7341892658432698,
+    1.5716006357752745,
+    1.6772682218623638,
+    -1.5707426566745548
+  ],
+  "timeout_s": 2.0,
+  "settle_s": 1.0,
+  "reaction_delay_s": 0.05,
+  "position_speed_rad_s": 0.15,
+  "position_acceleration_rad_s2": 0.3,
+  "candidate_stride_steps": 1,
+  "serves": [
+    {
+      "id": "centre",
+      "position_m": [
+        0.5,
+        0.0,
+        1.31
+      ],
+      "velocity_m_s": [
+        -3.3,
+        0.0,
+        -0.8
+      ]
+    },
+    {
+      "id": "left",
+      "position_m": [
+        0.5,
+        -0.015,
+        1.31
+      ],
+      "velocity_m_s": [
+        -3.3,
+        0.0,
+        -0.8
+      ]
+    },
+    {
+      "id": "right",
+      "position_m": [
+        0.5,
+        0.015,
+        1.31
+      ],
+      "velocity_m_s": [
+        -3.3,
+        0.0,
+        -0.8
+      ]
+    },
+    {
+      "id": "too_wide",
+      "position_m": [
+        0.5,
+        0.7,
+        1.31
+      ],
+      "velocity_m_s": [
+        -3.3,
+        0.0,
+        -0.8
+      ]
+    }
+  ],
+  "physics_hz": 480
+}

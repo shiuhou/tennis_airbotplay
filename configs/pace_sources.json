@@ -1,0 +1,298 @@
+{
+  "repository": "https://github.com/purdue-tracelab/PACE-ICRA2026",
+  "commit": "fdb192f8fff9f5ca54c4ec4a8441fda5174ca078",
+  "paper": "https://arxiv.org/html/2509.21690v5",
+  "paper_sha256": "a022596d02f52014cdf43d84b375f9ecfba9d407c3029cff47823a5d966d7eff",
+  "files": [
+    {
+      "path": "README.md",
+      "blob_sha": "89bf58310e01456d1bc063371bd99cf586c376cd",
+      "sha256": "d9bab60fd6d3e9fd19f1a6e6efc150b530bd7bd638280b70104e19aafe058794"
+    },
+    {
+      "path": "LICENSE",
+      "blob_sha": "d7bfcb200df1a30e97d247d7b78081b6436175a0",
+      "sha256": "ec85e9006366bb74d7ea893150c4ac7d0e37cb80d329a83f77fcf9b194f61f6d"
+    },
+    {
+      "path": "rsl_rl/LICENSE",
+      "blob_sha": "147d39f5d963977311b2f49eea139169a02a34ef",
+      "sha256": "d96416ef724b3972dd9a8316008b1b51d8972c1be5fd0d38f0b4b1664b125e4e"
+    },
+    {
+      "path": "rsl_rl/setup.py",
+      "blob_sha": "ff627196e6fbb01d23805f945c3da60f21d821d6",
+      "sha256": "2a21842286177f2b049a4b9692d9748d6048244a5e52eb4f63b75478c49e1269"
+    },
+    {
+      "path": "legged_lab/physics/README.md",
+      "blob_sha": "6a1e0630d86365a77cea159c7034ee3c66397d83",
+      "sha256": "d7cabf538f7084cb2b467370072bc4d098c843d5e77faa19de0d59545a2d3976"
+    },
+    {
+      "path": "legged_lab/physics/aerodynamics.py",
+      "blob_sha": "91ffd7bf605f25d634489cc8a9f1d416ead57bdd",
+      "sha256": "fb7beab77e1a0ace33cd6697b9a4cb47e2c835d6713b1756e21c87e6268db561"
+    },
+    {
+      "path": "legged_lab/physics/aero_model.py",
+      "blob_sha": "6bd144778d7eb362306deabd245457d59959b9eb",
+      "sha256": "7c4d68e37a7b382866a0bc22b1e91094d61ec26cdd0ddcc6a84d49f0b1571ae4"
+    },
+    {
+      "path": "legged_lab/envs/base/tt_env.py",
+      "blob_sha": "cce9376c8303707826ab4f138599b816683b3be5",
+      "sha256": "34f92afd1c565d386d10f9bf2c0f64fa215aa8679edf9e2e3d373021d864c728"
+    },
+    {
+      "path": "legged_lab/envs/base/tt_env_config.py",
+      "blob_sha": "2efe4c92cfd2c9ab5117dff1c86290cf3a916a7b",
+      "sha256": "9b41f7715d5a3534a0914670d51d21a7c44457e923dcf42b381ea414685fa291"
+    },
+    {
+      "path": "legged_lab/envs/t1_tt/t1_tt_config.py",
+      "blob_sha": "994401fe5717788d9318af394051e5ffffe6b337",
+      "sha256": "9e13e7288cbe5566e64df6de58a40cdf8910b51f451832fec146142b08592442"
+    },
+    {
+      "path": "legged_lab/mdp/rewards.py",
+      "blob_sha": "0969a39c34ca2f94b2ab43a72fbb670fb60d7aa1",
+      "sha256": "59e17903af8052bed94939227d05e62885c8203dc6b4cfc8a3a188bf25c60a5e"
+    },
+    {
+      "path": "legged_lab/assets/table_tennis/ball.py",
+      "blob_sha": "eb1f010b38d90037cfaad7967fc5fd090736e261",
+      "sha256": "b97b93200c3ab32227cb0148a2f964ea9c825a29397c6497a0bf735ec4a4cd8b"
+    },
+    {
+      "path": "legged_lab/assets/table_tennis/table.py",
+      "blob_sha": "731753b8b5e4ce0eaae9786a983e9fa2525998e6",
+      "sha256": "48c6efee0897c6e561f0f1201cc6e059623829dfdeef9f0bec54dadd6b0e5c88"
+    },
+    {
+      "path": "legged_lab/assets/booster/booster.py",
+      "blob_sha": "09252542ff88c3b799dfa95695835838a399b1d3",
+      "sha256": "277d2484d4a18c59136527e011fc1554c90b161bf475dd09396e4214bc100b2e"
+    },
+    {
+      "path": "legged_lab/utils/env_utils/scene.py",
+      "blob_sha": "146c758b3660e418f0436ddb3436ba98fb445feb",
+      "sha256": "f70742fd4e329d91712e00ccaeb138555dd9b82e8251dfb908d13f2061af3e58"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/runners/on_policy_predictor_regression_runner.py",
+      "blob_sha": "e1fa59cab5a5f478e1ef699be4e977fdd2591d5c",
+      "sha256": "dfb472e63738283a8e5bc10fb1b2e61fdc9686e7c2802ece31caf98030509555"
+    },
+    {
+      "path": "legged_lab/envs/__init__.py",
+      "blob_sha": "410702649994fb53683f26f95f6430b234358893",
+      "sha256": "c3375152e6ec4c10caaa217e6e2d227c4b9ff493c06416c8450ab44e5d0f7d4f"
+    },
+    {
+      "path": "legged_lab/envs/base/base_config.py",
+      "blob_sha": "0ebbab75fb54b5bd774c2103f38135a8f0c4a4ef",
+      "sha256": "b552cc251f0ba27c9fc78e57979af7432118f221f197399f6697eed80326a236"
+    },
+    {
+      "path": "legged_lab/envs/base/base_env.py",
+      "blob_sha": "61c3ef75f710af38362b556aaa2cf0318009c0ee",
+      "sha256": "177d10efa6c180b68353507baaf51da1a64777712c0aed2d74a810fe30ff6f1e"
+    },
+    {
+      "path": "legged_lab/envs/base/base_env_config.py",
+      "blob_sha": "548ed5697b4fa1578251ca62814c7ab764cfad85",
+      "sha256": "2eb45cea8ec59013fbe8e3693cf4c4cbcc11340a9e01025147d36fbe283778a9"
+    },
+    {
+      "path": "legged_lab/envs/base/legged_config.py",
+      "blob_sha": "499f46a0e428034e0b1678e4828ae0012ea29eda",
+      "sha256": "be7f5a38ef160290b05c63c2b0602beeafae0eb977ea6ae07b0738442e10dbab"
+    },
+    {
+      "path": "legged_lab/envs/base/legged_env.py",
+      "blob_sha": "fb46b92dc99db1529a85524d5c854459dc3cd673",
+      "sha256": "1c6f225a29e871c9076667691470b42f94efe78a886b26bedf93e68764392d95"
+    },
+    {
+      "path": "legged_lab/envs/base/legged_env_config.py",
+      "blob_sha": "2ac8abc71229f84ffaa3119989e348a8eb772f23",
+      "sha256": "34d24af0b298a0671f435ead2a65c3e467d207b0d42c26d8e9f8cf035766f41a"
+    },
+    {
+      "path": "legged_lab/envs/base/tt_config.py",
+      "blob_sha": "d1a17de2282c41865d2a92015439b286498a191b",
+      "sha256": "bd9bc8eed232edfe9f48c09a423ea21e064aa3e6005fdd21886fdc01dd1a1909"
+    },
+    {
+      "path": "legged_lab/scripts/eval.py",
+      "blob_sha": "ab3a37cad67067541b415fb8a784ab62c38f905e",
+      "sha256": "713070608e6834574e3373cad18ff0eafab230f5b3e69cbdff7605ec6f1c2af3"
+    },
+    {
+      "path": "legged_lab/scripts/play.py",
+      "blob_sha": "146d1476b48f9c4ed9ba8c031ee273d35021ae50",
+      "sha256": "05853d09b3ad5ab3cbc1778f915aca54624ae4bd7180e5ced3e0eea182170976"
+    },
+    {
+      "path": "legged_lab/scripts/plot_action.py",
+      "blob_sha": "dc2af526b5e9f2ca25e2c24a44a996c28d733b0d",
+      "sha256": "09ec07efd8dd5b57597a8d1b794cd80364df048763275c3f789acf46461d639b"
+    },
+    {
+      "path": "legged_lab/scripts/preview.py",
+      "blob_sha": "ea113a0bbf3191d46e29d73ba1c051c65f0644b1",
+      "sha256": "1d45454355344ef8cf134488197a28d74a464152641e7fd5470623f57f41dbd4"
+    },
+    {
+      "path": "legged_lab/scripts/train.py",
+      "blob_sha": "5e993f490daabbca13d85273d4f684891282e36f",
+      "sha256": "54a7b4c871af0f4e35c9b7d46db1f8524fd095cb168234968093ba14a62e244f"
+    },
+    {
+      "path": "legged_lab/utils/__init__.py",
+      "blob_sha": "13781e098c845acf01216726c8b2b4b3327f2556",
+      "sha256": "800a6d484c739cf563e7bbf2e1e43e544193718f08a5a9ec53192d4238c62a8f"
+    },
+    {
+      "path": "legged_lab/utils/cli_args.py",
+      "blob_sha": "2b02f7ba7e20e133dc29bcd8511f3c0eb0f8dd03",
+      "sha256": "866a852263158fd12e2c6cf4f171da108efed5a54c1ef5a7c650c1c5c99e2ad8"
+    },
+    {
+      "path": "legged_lab/utils/data_recorder/frame_recorder.py",
+      "blob_sha": "851945663ade65d90f1fb5c1f6da2ec94518d3d0",
+      "sha256": "a40e13645b6daaaa4fec86029636bcfb91c02fe87debcb87125ced385d7d9d58"
+    },
+    {
+      "path": "legged_lab/utils/env_utils/__init__.py",
+      "blob_sha": "701e933b643563315d76c0091dfb49c417667553",
+      "sha256": "ece50c3725004bca6187b40d47faf4856f0780cb587de8df1d6bb41ae927eb67"
+    },
+    {
+      "path": "legged_lab/utils/keyboard.py",
+      "blob_sha": "f154180b95319c0cab93c953adca3019325ac7e5",
+      "sha256": "4b2eae30f7075744bda79a51a56e2c81bba9f618e2893a4e2eed0857f2ecab36"
+    },
+    {
+      "path": "legged_lab/utils/task_registry.py",
+      "blob_sha": "6cd9b5bed652b41d390c05ca86490bc22fca9698",
+      "sha256": "6c2dcd8bfc5bfd82baa4de589ae0316f3daa8cd380fd92b28396e27bbe93cf80"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/__init__.py",
+      "blob_sha": "ebc2e201455210f49e4294ce4f520f0718750a43",
+      "sha256": "eca880a726873a075dc37aba1c4da3bfa8f7a19df45ed963964e864b48c6bfcc"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/algorithms/__init__.py",
+      "blob_sha": "effcaa2850e056953687279e70a912a23ecd100a",
+      "sha256": "82800dabead2a8e8fbc22162d34358cbafefefa81e620bbe1fbfea4b034e1205"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/algorithms/distillation.py",
+      "blob_sha": "93d70ef23817a58616a2d021c4aa821f26ab782e",
+      "sha256": "1d4f43d4c6750758b9388155e3952641c2dec649b650a3f06f9478f00480511d"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/algorithms/ppo.py",
+      "blob_sha": "d7f3de7222d9d12eed2db02c94b3984ac48678a7",
+      "sha256": "ec0286fdbdd30360b21f2bea314f676058793f9241649d30545d656a961a22a2"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/env/__init__.py",
+      "blob_sha": "ab7c05629303655471c04735d021dc77761447da",
+      "sha256": "8b187dca6d7ca5f9f4ab6a8c30218ca7bd6d3f952706526cad4ae156d1541870"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/env/vec_env.py",
+      "blob_sha": "9fef15f00130aa58d67d3a53b266cdfa68114737",
+      "sha256": "4cea1f22d498d76d00ef34facbf0abec256ce4266f679fb9dd185641bdca778b"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/__init__.py",
+      "blob_sha": "0a96bd93dedc98a6061f2822945f85488ea8142b",
+      "sha256": "9cdaae9b6823ca0019dcb317f3ab136d588d79259db00ebf437598625dfc20df"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/actor_critic.py",
+      "blob_sha": "76802484d1f4587b3e348c81e885709a4d089b70",
+      "sha256": "51ce8c6504a7434f86e5188ccb11e9fc981e46f764c00e32be3e8febe7112ae2"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/actor_critic_recurrent.py",
+      "blob_sha": "da020f970b9fbc4eb094eb2ec5e8b773a4a6439c",
+      "sha256": "965a3f1db386fb58fe277761a4db8cda967c4a51ad5735e2bc5dccf10a49d710"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/normalizer.py",
+      "blob_sha": "70a2da01ab9960e153ce8dccb3a084308e1358c8",
+      "sha256": "f52677617f729c21c7440fd52d69b7e570313836a9deb21519425b806043a311"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/rnd.py",
+      "blob_sha": "37fbdb2714ca7bf6065204d9d583d7a5f37d80ad",
+      "sha256": "957fd599dd19c579e1c83f37d253d0ff45d789f5965ed4d3b3b4c235ec00386c"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/student_teacher.py",
+      "blob_sha": "66298c7b6e6411b81623767ae2f0cfed76bbbd4e",
+      "sha256": "f44d6cbd5ddc18f109b6a914e0c6dd80107f6b71bffef60d26cf695c7ee60d04"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/modules/student_teacher_recurrent.py",
+      "blob_sha": "5f7480bfffd517ee24343e280d9be3f184807054",
+      "sha256": "6342ebeb80768d97a6bc8bd4792fd96f947b5d58c0cbab59b71cb8b735520e34"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/networks/__init__.py",
+      "blob_sha": "8db43edaf2b4e46f69cb814fb4367c9efd957ec3",
+      "sha256": "57d38865f66dcff63a419f962de32ef07919fdfc40ccad96ee4713e7bdaa87b8"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/networks/memory.py",
+      "blob_sha": "7f7b7c541ef6637c41c77d69f66a3c2fefc468d6",
+      "sha256": "dada928b14ebd32a1f47c9185f2b94e2ff799faa698ca519f0d78ec92531cebe"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/runners/__init__.py",
+      "blob_sha": "e85702e36ed8f7743e4b6dd6b1d640f40266b926",
+      "sha256": "07e659e6e2d21923dc9363295804ea85876738bbb394a26c6259b7ea559357f6"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/runners/on_policy_runner.py",
+      "blob_sha": "148702fd046240a29cd39d87b97a17f6d7e87f31",
+      "sha256": "f89a7a89860111484ce76fe6f102dd176143397511adb17e82a852841f1894fa"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/storage/__init__.py",
+      "blob_sha": "9bb13c965b8b47fed4c9224500ce1e4c5345fa7e",
+      "sha256": "599a712105321c64423e65777d709ace050ef46d5f98b8791d697b9c4e55106e"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/storage/rollout_storage.py",
+      "blob_sha": "42b8c9fd7f33cafc20eba443b720bed8ab2c348e",
+      "sha256": "456450bbba03f9f5818f9ec43d2f3bd5d14d2d27f4bf2308838dd580f32ffcf0"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/utils/__init__.py",
+      "blob_sha": "27417295fabf8f39527b0d7ad59df8e368d7d8ca",
+      "sha256": "2e407f50cb40043ab4b9690c10465a59ed4bbba714ff18670ac0aca8552a39b6"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/utils/neptune_utils.py",
+      "blob_sha": "3796ec8b1d6fa89447414500755f09528baa3d25",
+      "sha256": "1a30b7fe45ce1ba9be52c07d050678a23fe57e61ae25465af4159c93af195d40"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/utils/utils.py",
+      "blob_sha": "08caa7cb42d0baf4e75a8f39a917356eb8f518c1",
+      "sha256": "db99cd0877488809d73332f05670e9c72da9bd0292aa554121c503e61544588e"
+    },
+    {
+      "path": "rsl_rl/rsl_rl/utils/wandb_utils.py",
+      "blob_sha": "243e82d4df56b3c4462682b0236036eb698c9c84",
+      "sha256": "875443f672af864930aee511c4dfd8b362b0b066c9cd54bd57b0513dd10336b2"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "source": "User supplied rl_engineering_repo.zip v0.3.0",
+  "archive_sha256": "22b17c8f7aac6ec6f971dde391890189ad0b596817a7ecce82240e832dd6b6d6",
+  "scope": "Selected unchanged reference documents; no trainer, dependencies or task manager imported",
+  "files": [
+    {
+      "archive_path": "rl-engineering/LICENSE",
+      "local_file": "LICENSE",
+      "sha256": "5fc1c0bf88d5ada28b808b8fa55d1cf751c8ad0fc98fde77e004649faa681585"
+    },
+    {
+      "archive_path": "rl-engineering/docs/research/brief-template.md",
+      "local_file": "brief-template.md",
+      "sha256": "dc1cf16345e3f8d48e79a6bdf302fbff4bd69b1a3f3bae1ef31e483b62694886"
+    },
+    {
+      "archive_path": "rl-engineering/docs/rl/evaluation.md",
+      "local_file": "evaluation.md",
+      "sha256": "532d091d66bd5bc752bf3b93c85bac02058530979c2cc119265e57179c7484b2"
+    },
+    {
+      "archive_path": "rl-engineering/docs/verification.md",
+      "local_file": "verification.md",
+      "sha256": "5542f323e8a3f649b29ab22387f73685d8d6e7ab18ef6f1e19ee5a5d99d2e22d"
+    }
+  ]
+}

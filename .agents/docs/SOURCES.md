@@ -1,4 +1,66 @@
-# AIRBOT Play 資產與來源
+# 研究參考與資產來源
+
+本頁統一記錄參考論文、開源專案、資產與授權。閱讀心得與工程經驗放在 [notes](../../doc/notes/README.md)，實作與驗證結果放在 [ROADMAP](ROADMAP.md)。
+
+## AIRBOT Play真機控制來源（2026-11-19）
+
+依使用者提供的bring-up規劃重新查閱官網，以下是文件核查，不是已連線／安裝／驗證本台設備；實際硬體、服務、SDK版本與拓撲使用者回覆皆未知。公開說明見[H0–H4筆記](../../doc/notes/hardware_bringup.md)。
+
+- [版本與下載中心](https://docs.discover-robotics.com/document/airbot-play/changelog.html)：列2026-03-13 V5.2、主程序5.2.5、SDK5.2.3；新版arm_sdk／AirbotClient／Lease。不是本台升級相容性證明。
+- [API總覽](https://docs.discover-robotics.com/document/airbot-play/sdk/api/reference.html)、[狀態與單位](https://docs.discover-robotics.com/document/airbot-play/sdk/api/types/arm-state.html)：查詢接口、efforts為A、軟體急停需控制權；指令成功發送不代表已停穩。
+- [官方API範例](https://docs.discover-robotics.com/document/airbot-play/sdk/api/examples.html)：client初始化自動連線；關節／馬達讀取完整示例含acquire_control與重力補償，不能原樣當H1只讀程式。未執行這些範例。
+- [控制模式](https://docs.discover-robotics.com/document/airbot-play/sdk/concepts/control-modes.html)、[Lease](https://docs.discover-robotics.com/document/airbot-play/sdk/concepts/lease.html)：四種模式、servo預設250Hz；取消既有運動及失聯停止契約仍需版本核對與實測。
+- [硬體接口](https://docs.discover-robotics.com/document/airbot-play/quick-start/hardware-interfaces.html)、[安裝](https://docs.discover-robotics.com/document/airbot-play/sdk/quickstart/installation.html)、[範例列舉](https://docs.discover-robotics.com/document/airbot-play/sdk/quickstart/examples/list.html)：現行USB用途、底座按鍵為零校、官方包與環境要求。未下載／安裝套件、啟服務或刷寫。
+- 附件的/en/airbot-play/下control-modes與hardware-interfaces兩連結本輪404，已用上述/document/入口核對。不同年代升級工具／服務互斥與本台接線禁忌尚未核對到適用手冊，不生成設備操作命令。官方二進位包及SDK是否有完整開源與再散布授權尚未查明，不能因文件可讀便視為可複製重發。
+
+## 相機標定來源（2026-11-19）
+
+- [Orbbec Python SDK](https://github.com/orbbec/pyorbbecsdk/tree/68cdfa181e09f0ddd0f21b77dff29cb3e7a0f0d2)：固定commit 68cdfa18，直接執行官方01_hello_camera／04_camera_calibration／04_enumerate／01_recorder／02_playback，離線匯入重用官方回放與utils。原檔及Apache-2.0 LICENSE下載至本地runs，逐檔SHA256見configs/orbbec_examples.json，不修改或重複vendor進倉庫。套件固定pyorbbecsdk2 2.1.3；安裝、雜湊與官方info／parameters無裝置路徑已執行，真實錄影與BAG匯入尚未驗證。官方讀參數範例的退出0不能當硬體成功。SDK元件授權依套件原附檔保留。
+- OpenCV contrib 4.11.0.86：使用ChArUco偵測、calibrateCamera、固定內參stereoCalibrate及投影API。PDF及合成影像實際運行已驗證；[官方教學連結](https://docs.opencv.org/4.11.0/da/d13/tutorial_aruco_calibration.html)本輪HTTP403，不能宣稱已讀該網頁全文。
+- 使用者Calibration Target.pdf：SHA256見`configs/camera_board.json`，11×8格、15／11 mm名義尺寸；44標記ID0–43及70角點與DICT_4X4_50、legacy排列相容。字典原始後綴不可唯一反推，實物尺寸須另量。原附件不自動公開複製。
+
+## 論文與研究程式
+
+更新：2026-11-16。優先級按當前 Gate 的問題安排：P0 優先、P1 後續、P2 延伸。證據範圍區分「待讀」「入口／摘要已核對」「方法／程式已核查」「原版已運行」「本機已採用並驗證」，不以收錄或作者成果代替本機驗收。
+
+| 優先級／關聯 Gate | 參考與固定版本 | 證據範圍 | 用途與限制 |
+| --- | --- | --- | --- |
+| P0主線／M6–M7（已有M1–M2） | [PACE v5](https://arxiv.org/abs/2509.21690v5) · [程式 fdb192f8](https://github.com/purdue-tracelab/PACE-ICRA2026/tree/fdb192f8fff9f5ca54c4ec4a8441fda5174ca078) | 方法／選讀程式已核查；阻力參考已在本機採用驗證；原版訓練未運行 | 保留原有質量／係數差異和混合授權記錄，見「球物理來源」。實作：[球設定](../../configs/ball.json)、[力律](../../src/airbot_tt/ball.py)，驗證 `./verify_ball.sh`。reset/history、資訊隔離及接觸代理風險見 [notes](../../doc/notes/README.md)。 |
+| P1按需／物理擴展 | [Sony Physics Models v2](https://arxiv.org/html/2606.28805v2)，2026-07-01 | 版本、摘要及章節範圍已核對；公式／係數／適配待精讀；未採用 | 涵蓋隨Reynolds number／spin ratio變動的Drag／Magnus、球殼變形與桌面回彈、球拍接觸及residual neural network。不得把其標定成果視為AIRBOT已標定。 |
+| P0／M3 | [Isaac Sim 4.5 Collision Setup／Simulation Fundamentals](https://docs.isaacsim.omniverse.nvidia.com/4.5.0/physics/simulation_fundamentals.html) | BLOCKED：本次4.5頁面及版本首頁均回傳404；章節待恢復核查 | 用於對照凸包、凸分解及碰撞設定；不以最新版取代4.5證據。現有本機分塊凸包測試仍有效，這不是官方文件已讀的宣稱。 |
+| P1對照／延遲診斷 | [Robotic Table Tennis: A Case Study into a High Speed Learning System](https://arxiv.org/abs/2309.03315) | 論文入口已定位；方法待讀 | 擬核對延遲、高速控制、動作空間、重置及評估；不直接採用其控制設定。 |
+| P2按需／軌跡工具 | [Ruckig 論文](https://arxiv.org/abs/2105.04830) · [程式 91085469](https://github.com/pantor/ruckig/tree/91085469d2133089c285e2f34541255815390e2c) | README接口／限制及GitHub授權標示已核對；未安裝或運行 | 指定位置／非零速度／加速度及jerk限制。MIT；Community中間路點使用雲端，Pro另行提供本地功能。minimum_duration是最短時長要求，不是任意指定精確擊球時刻的保證；仍須檢查關節限位、碰撞及實際跟蹤。 |
+| P1對照／後續研究 | [Sony Ace Nature論文](https://www.nature.com/articles/s41586-026-10338-5) · [官方補充 57ac16a4](https://github.com/SonyResearch/ace_public/tree/57ac16a42c25c47bde24cd2a592804f4b800085b) | Nature來源連結、倉庫目錄與資料／示意程式說明已核對；方法未完整精讀 | 資料、示意程式及影片用途分列於下節；未確認完整再利用授權，未複製資產或運行訓練。 |
+| P1／M4 | [Role of Uncertainty in Anticipatory Trajectory Prediction for a Ping-Pong Playing Robot](https://arxiv.org/abs/2312.03024) | 搜尋定位；待讀 | 擬研究預測不確定性與提前運動的取捨，不只看位置誤差。 |
+| P1／M5–M8 | [Achieving Human Level Competitive Robot Table Tennis](https://arxiv.org/abs/2408.03906) | 官方資料README已確認論文連結；方法待讀 | 擬研究分層技能、技能描述及真實來球分布。 |
+| P1／M4、M7–M8 | [Google Initial Ball States 54cf18e4](https://github.com/google-deepmind/competitive_robot_table_tennis/tree/54cf18e41a8f134d98ad38710001ed50aabb8ebc) | 固定commit、README格式與授權已核對；Notebook未執行，未匯入資料 | README記載15,792組實測初始位置／速度／旋轉；軟體Apache-2.0，其他材料CC-BY4.0。不是完整實測軌跡，MuJoCo重播不是實測真值。 |
+| P1／M5、M7 | [Bridging Reinforcement Learning and Optimal Control via Feasible Action Mapping](https://arxiv.org/abs/2607.23930) | 搜尋定位；待讀 | 擬比較如何把策略動作映射成滿足約束的運動，尚未採用。 |
+| P2對照／架構比較 | [HITTER: A HumanoId Table TEnnis Robot via Hierarchical Planning and Learning](https://arxiv.org/abs/2508.21043) | 搜尋定位；待讀 | 審查建議用來研究擊球位置／速度／時間與下層執行的分工，須核對原文；不移植人形本體。 |
+| P1／M8 | [GoalsEye](https://arxiv.org/abs/2210.03662) | 團隊參考；待讀 | 目標條件化回球及迭代模仿學習，供比較規劃示範／模仿初始化；不是已採用的PPO或物理模型。 |
+| P2／M8之後 | [From Hitter to Player](https://arxiv.org/abs/2610.14067) | 搜尋定位；待讀 | 擬比較動作執行與落點策略分離；不提前啟動self-play。 |
+| P2／跨模組 | [PingpongDuo](https://arxiv.org/abs/2610.20579) | 搜尋定位；待讀 | 擬了解分層技能與協調，不擴大固定底座任務到雙人對打。 |
+
+HAMLET、VICAR僅由此次審查文字提出，未取得可確認身分的原文連結；暫列跨模組待辨識項，不猜測論文、不宣稱已讀Notion相關頁面。
+
+### Sony Ace 補充材料
+
+以下連結均固定到 `57ac16a42c25c47bde24cd2a592804f4b800085b`。本次讀取目錄與說明，沒有下載／重新發布資料集或影片；該目錄未見LICENSE，完整再利用授權仍待確認。
+
+- **[事件級資料說明](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/data/Readme.md)／[match_data.csv](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/data/match_data.csv)**：說明列出事件時間、shot/bounce/net類型、球位置及事件後速度／旋轉，可供後續M4和碰撞後狀態研究；尚未檢查CSV品質或標定適配。
+- **[Approximate Python Code](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/pseudo_code/Readme.md)**：示意SAC訓練迴圈等方法；原文說明省略通訊、checkpoint和工程配置，不能當作完整可復現的訓練程式。
+- **[影片索引](https://github.com/SonyResearch/ace_public/blob/57ac16a42c25c47bde24cd2a592804f4b800085b/README.md)**：比賽與實驗展示，未以影片代替數值驗收。
+
+### 閱讀與採用順序
+
+2026-11-19深讀：PACE來源擴至runner／actor-critic／PPO／storage及訓練評測入口，58個文字檔固定來源雜湊見[清單](../../configs/pace_sources.json)。論文v5與實作差異、9項原函式隔離查證見[完整資料流](../../doc/notes/pace_pipeline.md)；未修改上游，未復現整體訓練或作者checkpoint成績。
+
+2026-11-16方向確認：PACE是唯一主要學習與遷移對象。下一步先回讀已固定版本的reward、predictor與訓練接口，建立AIRBOT適配及消融。其他來源按具體問題選讀，不把技能庫、HITTER式分層控制或即時規劃優化列為M6前置。
+
+使用者提供的M5研究建議和Chat討論屬決策參考，不是論文核查證據。「M5已部分實現HITTER」等說法不據此採認，三條固定腳本也不直接等同其他研究中的已學習技能庫。以下各來源的閱讀／授權狀態維持實際核查程度。
+
+目前M3／M4已在限定範圍通過；文獻待讀不會倒改既有驗證結果。M5已核對Ruckig接口但未引入依賴，使用自行推導的兩段五次插值及無摩擦相對碰撞公式（見[M5筆記](../../doc/notes/m5.md)）。本輪嘗試讀取Google高速系統／HITTER等原文遇SSL連線失敗，方法仍標待讀；不宣稱採用其結果。後續優先深入PACE的reward／predictor與PPO；Sony物理模型按物理問題選讀，GoalsEye留作M8按需對照。新增方法須先與本機baseline比較，不因文獻收錄而直接換演算法。
+
+採用前補齊版本、實作位置、驗證入口及逐項授權。詳細結果仍只記ROADMAP與本地證據，不另建實驗日誌。
 
 ## 選型與版本
 
@@ -44,8 +106,30 @@ Flange 是 `link6` 局部 (0, 0, 0.0865) m，旋轉為單位矩陣，對應原 `
 | 2025 Hardware Git `56ea4901144bdf43ad4dcb231cff4c7bb54fc8dc` | `ArmState` 含關節 ID、位置、速度、effort 與錯誤資料，`state()` 取快照。低階命令為逐幀 `pvt` 位置、`csv` 速度或 `mit` 混合控制；高階控制由 `airbot_state_machine` 提供。官方下載頁另列低階 Hardware 0.2.9，與高階 5.x 屬不同軟體線。[Hardware Arm API](https://github.com/DISCOVER-Robotics/AIRBOT-Play-Hardware/blob/56ea4901144bdf43ad4dcb231cff4c7bb54fc8dc/airbot_hardware/handlers/arm.hpp) · [下載頁](https://docs.discover-robotics.com/document/en/airbot-play/changelog.html) |
 | 官方 5.x 文件 | 廠方 2026-03-13 發布的 V5.2 使用 server 5.2.5 與 `arm_sdk` 5.2.3 的 `AirbotClient`，取代 5.1.6 的 `airbot_py` / `AIRBOTArm`。控制需取得 lease，選擇 `Controller` 後使用 `get_arm_joint_state`、`move_joint`、`move_end_pose`、多路點接口或 `set_arm_emergency_stop`。關節狀態為 rad、rad/s、電流 A，Cartesian pose 以 m 和 **xyzw** 回饋。仿真採 **wxyz**。未識別借用臂的馬達型號、韌體版本或校零；未來選擇單一 SDK 世代並核對其版本與實機參數。[改版記錄](https://docs.discover-robotics.com/document/en/airbot-play/changelog.html) · [控制模式](https://docs.discover-robotics.com/document/en/airbot-play/sdk/concepts/control-modes.html) · [API](https://docs.discover-robotics.com/document/en/airbot-play/sdk/api/reference.html) · [關節狀態](https://docs.discover-robotics.com/document/en/airbot-play/sdk/api/types/arm-state.html) · [笛卡爾姿態](https://docs.discover-robotics.com/document/en/airbot-play/sdk/api/types/cartesian-pose.html) · [韌體欄位](https://docs.discover-robotics.com/document/en/airbot-play/sdk/api/types/firmware-info.html) |
 
+## 球物理來源
+
+球的二次阻力公式及起始參考係數另核對 [PACE v5 §IV-A2](https://arxiv.org/html/2509.21690v5) 與 [官方程式 `fdb192f8`](https://github.com/purdue-tracelab/PACE-ICRA2026/tree/fdb192f8fff9f5ca54c4ec4a8441fda5174ca078)。其 `tt_env.py` 外力使用 rho=1.225、Cd=0.4378，但 `ball.py` 是 3.4 g Vicon 球，預測器另用 2.7 g／Cd=0.47；本工程明確使用 2.7 g 的單一球參數設定，不把上游預測當作數值真值。球物理程式為本地實作，沒有複製 PACE trainer／機器人資產或安裝其依賴。PACE 根授權 MIT，內含 RSL-RL BSD-3-Clause、部分原始檔 Apache-2.0；將來複用須依各檔授權保留來源。此處參考係數不代表本機實物標定。
+
 ## 固定執行環境
 
 - 已驗證的本機 OCI 映像 ID 為 `sha256:9c5b00fb775c65913f78f22eadb56912853c1f9f1c38828e53fb99369e29c49e`。Isaac Sim `4.5.0-rc.36+isaaclab_minimal_45.19180.b735e627.gl`，Isaac Lab `2.1.0`，Kit URDF Importer `2.3.14+106.5.0.lx64.r.cp310`。Sim 與 Kit 擴充依 NVIDIA 授權使用。映像與 Kit 擴充由執行環境提供。[Isaac Sim 4.5 授權](https://catalog.ngc.nvidia.com/orgs/nvidia/-/containers/isaac-sim/4.5.0)
 - Python 3.10.15。Kit session 使用 NumPy 1.26.0／SciPy 1.10.1，獨立數值回歸使用同一映像的 NumPy 1.26.4／SciPy 1.15.2。NumPy、SciPy、PyTorch（2.5.1+cu124）為 BSD-3-Clause；ImageIO 2.37.0 與 imageio-ffmpeg 0.6.0 為 BSD-2-Clause。相依模組由映像安裝。
 - FFmpeg 編碼使用 imageio-ffmpeg 所附 7.0.2，主機以 Ubuntu 的 FFmpeg/ffprobe 6.1.1-3ubuntu5（GPL build）獨立驗證 H.264。程式庫與影音編碼器未納入 Git。
+
+### M6直接復用與Lab接口核對（2026-11-19）
+
+M6由`scripts/prepare_pace.py`按`configs/pace_sources.json`下載／校驗固定原檔與授權，直接import PACE fdb192f8的`_MLPPredictor`。網路未改；本機窗口遮罩、離線訓練入口、同一步hook與checkpoint屬適配。reward公式來自同commit的`legged_lab/mdp/rewards.py`及T1配置；本機物理教師與事件有效性不同，細節見[M6筆記](../../doc/notes/m6_notes.md)。
+
+核對固定Isaac映像內`/workspace/isaaclab/source/isaaclab_rl/isaaclab_rl/rsl_rl/vecenv_wrapper.py`（SHA256 `6c9129e9592a013b874ee29dce8deae60815143554cda1de58c3e7a72c625e62`）：policy／critic字典與timeout轉換；Lab setup要求rsl-rl-lib2.3.1、torch2.5.1。容器未帶Git目錄，因此使用映像digest與檔案hash定位，不聲稱已取得該檔Git commit。完整RL wrapper尚未接本機，未安裝／升級其依賴。
+
+## 通用 RL 工程流程參考（2026-11-19）
+
+使用者提供 `rl_engineering_repo.zip` v0.3.0，採納研究假設、獨立評測、來源紀錄、分組驗證與按訓練 seed 比較等規約。保留 [原文與來源雜湊](../../assets/upstream/rl_engineering_v3/provenance.json) 及 MIT LICENSE；三份選入文件保持原文，其內部連結仍指原 repo。沒有搬入 CartPole／CleanRL trainer 或 task manager；本工程小型工具為按既有接口實作。實際採用及未實作範圍見 [研究流程筆記](../../doc/notes/research_workflow.md)。
+
+## M7 官方接口使用（2026-11-19）
+
+直接使用既有固定 fdb192f8 PACE 的 ActorCritic、PPO 與 RolloutStorage，匯入前按 pace_sources.json 核對原檔；未改上游程式。向量場景與 reset 契約核對固定 Isaac image 內 Lab 2.1 的 `scripts/tutorials/02_scene/create_scene.py`、`envs/direct_rl_env.py`、`scene/interactive_scene.py` 與 articulation API。重用 InteractiveScene 的 cloning／collision filtering，末態保存與 bootstrap 由 AIRBOT 薄接合處理。現有來源／授權規則不變，未移入 CartPole 演算法或新依賴堆疊。
+
+### 碰撞LP數值診斷（2026-11-19）
+
+核對 [SciPy 官方 linprog／HiGHS 文件](https://docs.scipy.org/doc/scipy/reference/optimize.linprog-highs.html)：`highs`自動選擇dual simplex或IPM、預設presolve與1e-7 primal／dual可行性容差。實際容器SciPy 1.15.2；未升級或修改上游。最大共同半空間餘量是本機對等價凸包相交問題的改寫，不是官方文件提供的碰撞專用演算法；幾何、重現與限制見[M7筆記第13節](../../doc/notes/m7_notes.md)。

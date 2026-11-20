@@ -178,3 +178,90 @@ class VelocityTrajectory:
             return q, self.velocity * fraction, -self.velocity / self.ramp_time
         q = self.points[0] + self.velocity * (t - 0.5 * self.ramp_time)
         return q, self.velocity.copy(), np.zeros(6)
+
+
+class StrikeTrajectory:
+    """Two C2 quintics: rest -> timed strike state -> rest.
+
+    Position/speed/acceleration extrema are checked analytically per joint.
+    Collision checks sample the actual curved path with bounded time intervals;
+    they remain discrete, not continuous collision certification.
+    """
+
+    def __init__(self, model, start, strike, strike_velocity, end, hit_time, recovery_time,
+                 *, vmax=COMMAND_SPEED, amax=COMMAND_ACCELERATION,
+                 require_clear=None, max_joint_step=DEFAULT_SAMPLE_STEP_RAD):
+        self.model = model
+        self.collision_check = require_clear
+        self.velocity_limit = np.minimum(_positive_joint_limits(vmax, 'Velocity limit'), model.velocity)
+        self.acceleration_limit = _positive_joint_limits(amax, 'Acceleration limit')
+        self.points = np.array([model.validate(q) for q in (start, strike, end)])
+        velocity = np.asarray(strike_velocity, dtype=float)
+        if velocity.shape != (6,) or not np.isfinite(velocity).all():
+            raise ValueError('Strike velocity must contain six finite values.')
+        self.durations = np.array([_time(hit_time), _time(recovery_time)])
+        if np.any(self.durations <= 0):
+            raise ValueError('Strike and recovery durations must be positive.')
+        if not np.isfinite(max_joint_step) or max_joint_step <= 0:
+            raise ValueError('Collision sample step must be positive and finite.')
+        self.ends = np.cumsum(self.durations)
+        self.duration = float(self.ends[-1])
+        _check_timeline(self.duration)
+        if self.ends[1] <= self.ends[0]:
+            raise ValueError('Recovery duration is below time resolution.')
+        self.hit_time = float(self.durations[0])
+        velocities = [np.zeros(6), velocity, np.zeros(6)]
+        self.coefficients = []
+        self.peak_velocity = np.zeros(6)
+        self.peak_acceleration = np.zeros(6)
+        for i, duration in enumerate(self.durations):
+            # Polynomial in normalized time u; endpoint acceleration is zero.
+            q0, q1 = self.points[i:i+2]
+            v0, v1 = velocities[i:i+2]
+            coeff = np.zeros((6, 6))
+            coeff[0], coeff[1] = q0, duration*v0
+            rhs = np.array([q1-q0-duration*v0, duration*(v1-v0), np.zeros(6)])
+            coeff[3:] = np.linalg.solve([[1,1,1],[3,4,5],[6,12,20]], rhs)
+            if not np.isfinite(coeff).all():
+                raise ValueError('Non-finite trajectory coefficients.')
+            self.coefficients.append(coeff)
+            for axis in range(6):
+                polynomial = np.polynomial.Polynomial(coeff[:,axis])
+                for order, low, high in [(0,model.lower[axis],model.upper[axis]),
+                                         (1,-self.velocity_limit[axis],self.velocity_limit[axis]),
+                                         (2,-self.acceleration_limit[axis],self.acceleration_limit[axis])]:
+                    derivative = polynomial.deriv(order)/duration**order
+                    roots = derivative.deriv().roots()
+                    times = [0.,1.] + [r.real for r in roots if abs(r.imag)<1e-9 and 0<r.real<1]
+                    values = derivative(np.array(times))
+                    if np.min(values)<low-1e-9 or np.max(values)>high+1e-9:
+                        raise ValueError(f'Strike segment {i}, joint {axis+1}, derivative {order} exceeds limits.')
+                    if order == 1:
+                        self.peak_velocity[axis] = max(self.peak_velocity[axis], float(max(abs(values))))
+                    elif order == 2:
+                        self.peak_acceleration[axis] = max(self.peak_acceleration[axis], float(max(abs(values))))
+        self.checked_samples = 0
+        if require_clear is not None:
+            step = min(DT, max_joint_step/max(float(max(self.peak_velocity)),1e-12))
+            for i, duration in enumerate(self.durations):
+                start_t = 0 if i == 0 else self.hit_time
+                for t in np.linspace(start_t,start_t+duration, max(1,int(np.ceil(duration/step)))+1):
+                    require_clear(self.sample(t)[0])
+                    self.checked_samples += 1
+        self.coefficients = np.array(self.coefficients)
+        for value in (self.points,self.durations,self.ends,self.coefficients,self.velocity_limit,self.acceleration_limit,
+                      self.peak_velocity,self.peak_acceleration):
+            value.setflags(write=False)
+
+    def sample(self, t):
+        t = _time(t)
+        if t <= 0:
+            return self.points[0].copy(), np.zeros(6), np.zeros(6)
+        if t >= self.duration:
+            return self.points[-1].copy(), np.zeros(6), np.zeros(6)
+        i = 0 if t < self.hit_time else 1
+        duration = self.durations[i]
+        u = (t-(0 if i == 0 else self.hit_time))/duration
+        c = self.coefficients[i]
+        return tuple(np.array([np.polynomial.Polynomial(c[:,j]).deriv(order)(u)/duration**order
+                               for j in range(6)]) for order in range(3))

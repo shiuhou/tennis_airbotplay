@@ -1,0 +1,18 @@
+{
+  "calibration": "UNCALIBRATED simulation baseline; no measured AIRBOT ball or rubber fit",
+  "mass_kg": 0.0027,
+  "radius_m": 0.02,
+  "air_density_kg_m3": 1.225,
+  "drag_coefficient": 0.4378,
+  "drag_source": "PACE fdb192f8fff9f5ca54c4ec4a8441fda5174ca078 tt_env.py; reference only, not our calibration",
+  "gravity_m_s2": 9.81,
+  "table_restitution": 0.9,
+  "paddle_restitution": 0.8,
+  "net_restitution": 0.0,
+  "friction": 0.0,
+  "contact_offset_m": 0.0002,
+  "table_size_m": [2.74, 1.525, 0.04],
+  "table_top_m": 0.76,
+  "net_height_m": 0.1525,
+  "net_thickness_m": 0.002
+}

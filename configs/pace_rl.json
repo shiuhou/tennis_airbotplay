@@ -1,0 +1,46 @@
+{
+  "schema": "airbot-m7-ab-v1",
+  "scope": "M7.1-3 and small A/B diagnostic, no deployment",
+  "physics_hz": 960,
+  "decimation": 20,
+  "history": 5,
+  "env_spacing_m": 5.0,
+  "action_scale_rad": [
+    0.6,
+    0.6,
+    0.6,
+    0.6,
+    0.6,
+    0.6
+  ],
+  "action_scale_basis": "Candidate symmetric 0.6rad envelope around M5 ready, bounded by URDF and checked against M5 before PPO",
+  "observation_clip": 10.0,
+  "reward": {
+    "contact": 1.0,
+    "legal_return": 5.0,
+    "action_rate": -0.001,
+    "fault": -1.0
+  },
+  "ppo": {
+    "steps": 24,
+    "epochs": 5,
+    "minibatches": 4,
+    "learning_rate": 0.00001,
+    "entropy": 0.006,
+    "clip": 0.2,
+    "init_std": 0.3,
+    "hidden": [
+      512,
+      512,
+      128
+    ]
+  },
+  "smoke_max_s": 1800,
+  "seeds": [
+    7101,
+    7102,
+    7103
+  ],
+  "control_note": "48Hz bounded cubic interpolation validated against M5 centre motion; obsolete stop-at-every-request limiter rejected",
+  "diagnostic_iterations": 16
+}

@@ -39,7 +39,7 @@ class _InertialUrdfConverter(UrdfConverter):
         return config
 
 
-def _articulation_config(model):
+def _articulation_config(model, base_position=BASE_POSITION, initial=HOME, speed_limit=SIM_SPEED):
     manager = omni.kit.app.get_app().get_extension_manager()
     pinned = f"{URDF_IMPORTER}-{URDF_IMPORTER_VERSION}"
     enabled = manager.get_enabled_extension_id(URDF_IMPORTER)
@@ -75,14 +75,14 @@ def _articulation_config(model):
             ),
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=BASE_POSITION, joint_pos=dict(zip(model.joint_names, HOME, strict=True)),
+            pos=base_position, joint_pos=dict(zip(model.joint_names, initial, strict=True)),
             joint_vel={".*": 0.0},
         ),
         soft_joint_pos_limit_factor=1.0,
         actuators={"arm": ImplicitActuatorCfg(
             joint_names_expr=["joint[1-6]"],
             effort_limit_sim=dict(zip(model.joint_names, model.effort, strict=True)),
-            velocity_limit_sim={name: min(SIM_SPEED, velocity) for name, velocity in
+            velocity_limit_sim={name: min(speed_limit, velocity) for name, velocity in
                                 zip(model.joint_names, model.velocity, strict=True)},
             stiffness=dict(zip(model.joint_names, DRIVE_STIFFNESS, strict=True)),
             damping=dict(zip(model.joint_names, DRIVE_DAMPING, strict=True)),
@@ -90,20 +90,59 @@ def _articulation_config(model):
     )
 
 
+def configure_racket_colliders(model, prim_path):
+    """Shared physical tool offsets and named TCP before scene cloning."""
+    stage = omni.usd.get_context().get_stage()
+    # The importer instances mesh groups even when the top-level asset isn't
+    # instanceable. Make collider groups editable before setting actual offsets.
+    for name in model.links:
+        group = stage.GetPrimAtPath(f"{prim_path}/{name}/collisions")
+        if group.IsInstance():
+            group.SetInstanceable(False)
+    colliders = []
+    for prim in stage.Traverse():
+        if str(prim.GetPath()).startswith(prim_path+"/") and prim.HasAPI(UsdPhysics.CollisionAPI):
+            collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+            collision.CreateContactOffsetAttr(RACKET_CONTACT_OFFSET_M)
+            collision.CreateRestOffsetAttr(0.0)
+            colliders.append(str(prim.GetPath()))
+    if not all(any(f"/{name}/collisions/" in p for p in colliders) for name in ("fixer", "paddle")):
+        raise RuntimeError("Imported physical tool collision meshes are missing.")
+    # A named frame on the physical paddle, not an extra massless rigid body.
+    marker = UsdGeom.Xform.Define(stage, f"{prim_path}/paddle/RacketTCP")
+    pose = pose_dict(model.link6_tcp)
+    marker.AddTranslateOp().Set(Gf.Vec3d(*pose["position_m"]))
+    w, x, y, z = pose["quaternion_wxyz"]
+    marker.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(w, Gf.Vec3d(x, y, z)))
+    return colliders
+
+
 class AirbotSimulation:
     """A single scene. Call from the application thread after AppLauncher starts."""
 
     dt = DT
 
-    def __init__(self, device="cpu", obstacles=(), *, render=False, allow_initial_contact=False, model=None):
+    def __init__(self, device="cpu", obstacles=(), *, render=False, allow_initial_contact=False, model=None,
+                 base_position=BASE_POSITION, initial=HOME, task_scene=None, dt=DT, speed_limit=SIM_SPEED):
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError("Physics timestep must be positive and finite.")
+        if not math.isfinite(speed_limit) or speed_limit <= 0:
+            raise ValueError("Simulation speed limit must be positive and finite.")
+        self.speed_limit = float(speed_limit)
+        self.dt = float(dt)
         self.model = Kinematics(URDF) if model is None else model
-        self.checker = CollisionChecker(self.model, obstacles)
-        self.initial = self.model.validate(HOME).copy()
+        self.checker = CollisionChecker(self.model, obstacles, base_position=base_position)
+        self.initial = self.model.validate(initial).copy()
+        self.task_scene = task_scene
         self._allow_initial_contact = allow_initial_contact
         if not allow_initial_contact:
             self.checker.require_clear(self.initial)
 
-        self.sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=DT, device=device))
+        sim_cfg = sim_utils.SimulationCfg(dt=self.dt, device=device)
+        if task_scene is not None:
+            sim_cfg.physx.enable_ccd = True
+            sim_cfg.physx.bounce_threshold_velocity = 0.01
+        self.sim = sim_utils.SimulationContext(sim_cfg)
         self.sim.set_camera_view((1.10, 0.88, 0.70), (0.0, 0.0, 0.36))
         ground = sim_utils.CuboidCfg(
             size=(20.0, 20.0, 0.10), collision_props=sim_utils.CollisionPropertiesCfg(),
@@ -118,33 +157,14 @@ class AirbotSimulation:
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.72, 0.25, 0.08)),
             )
             cfg.func(f"/World/Obstacle{index}", cfg, translation=box.center_m)
-        self.robot = Articulation(_articulation_config(self.model))
+        self.robot = Articulation(_articulation_config(self.model, base_position, initial, self.speed_limit))
         if self.model.has_racket:
-            stage = omni.usd.get_context().get_stage()
-            # The importer instances mesh groups even when the top-level asset isn't
-            # instanceable. Make collider groups editable before setting actual offsets.
-            for name in self.model.links:
-                group = stage.GetPrimAtPath(f"{ROBOT_PRIM}/{name}/collisions")
-                if group.IsInstance():
-                    group.SetInstanceable(False)
-            self.tool_colliders = []
-            for prim in stage.Traverse():
-                if str(prim.GetPath()).startswith(ROBOT_PRIM+"/") and prim.HasAPI(UsdPhysics.CollisionAPI):
-                    collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
-                    collision.CreateContactOffsetAttr(RACKET_CONTACT_OFFSET_M)
-                    collision.CreateRestOffsetAttr(0.0)
-                    self.tool_colliders.append(str(prim.GetPath()))
-            if not all(any(f"/{name}/collisions/" in p for p in self.tool_colliders) for name in ("fixer", "paddle")):
-                raise RuntimeError("Imported physical tool collision meshes are missing.")
-            # A named frame on the physical paddle, not an extra massless rigid body.
-            marker = UsdGeom.Xform.Define(stage, f"{ROBOT_PRIM}/paddle/RacketTCP")
-            pose = pose_dict(self.model.link6_tcp)
-            marker.AddTranslateOp().Set(Gf.Vec3d(*pose["position_m"]))
-            w, x, y, z = pose["quaternion_wxyz"]
-            marker.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(w, Gf.Vec3d(x, y, z)))
+            self.tool_colliders = configure_racket_colliders(self.model, ROBOT_PRIM)
         self.sensor = ContactSensor(ContactSensorCfg(
             prim_path=f"{ROBOT_PRIM}/(base_link|link[1-6]|fixer|paddle)", update_period=0.0,
         ))
+        if self.task_scene is not None:
+            self.task_scene.build(self)
         self.sim.reset()
         self.indices, names = self.robot.find_joints(list(self.model.joint_names), preserve_order=True)
         if self.robot.num_joints != 6 or tuple(names) != tuple(self.model.joint_names) or not self.robot.is_fixed_base:
@@ -221,7 +241,7 @@ class AirbotSimulation:
         self.robot.reset()
         self.sensor.reset()
         self._drive(self.target, self.target_velocity)
-        self.robot.update(DT)
+        self.robot.update(self.dt)
 
     def stop(self, reason="operator stop"):
         self.trajectory = None
@@ -245,7 +265,7 @@ class AirbotSimulation:
     def _start(self, path):
         self.trajectory = path
         self.elapsed = 0.0
-        self._trace_stride = max(1, math.ceil(path.duration / (DT * (MAX_TRACE_SAMPLES - 1))))
+        self._trace_stride = max(1, math.ceil(path.duration / (self.dt * (MAX_TRACE_SAMPLES - 1))))
         self._trace_step = 0
         self.last_trace = []
         return {"duration_s": path.duration, "checked_samples": path.checked_samples}
@@ -263,6 +283,34 @@ class AirbotSimulation:
             raise ValueError("A trajectory requires at least one six-axis waypoint.")
         path = Trajectory(self.model, [self._ready_for_motion(), *waypoints],
                           durations=durations, require_clear=self.checker.require_clear)
+        return self._start(path)
+
+    def start_strike(self, strike_q, strike_velocity, end_q, hit_time, recovery_time,
+                     *, vmax=0.15, amax=0.30):
+        """Timed passage with bounded command limits and per-instance speed cap."""
+        from .trajectory import StrikeTrajectory
+        if np.any(np.asarray(vmax) > self.speed_limit):
+            raise ValueError("Strike command exceeds configured simulation speed limit.")
+        path = StrikeTrajectory(self.model, self._ready_for_motion(), strike_q,
+                                strike_velocity, end_q, hit_time, recovery_time, vmax=vmax, amax=amax,
+                                require_clear=self.checker.require_clear)
+        return self._start(path)
+
+    def start_prepared_strike(self, path):
+        """Start a preflighted scripted strike from the same measured rest state.
+
+        Preparation occurs before serve launch. It is not an online planner;
+        changes in model/checker or initial posture invalidate the prepared path.
+        """
+        from .trajectory import StrikeTrajectory
+        seed = self._ready_for_motion()
+        if (not isinstance(path, StrikeTrajectory) or path.model is not self.model
+                or path.collision_check != self.checker.require_clear or path.checked_samples == 0):
+            raise ValueError('Prepared strike must be checked for this model and scene.')
+        if np.max(abs(seed-path.points[0])) > 2e-4:
+            raise ValueError('Prepared strike start no longer matches measured joints.')
+        if np.any(path.velocity_limit > self.speed_limit):
+            raise ValueError('Prepared strike exceeds simulation speed limit.')
         return self._start(path)
 
     def move_joint(self, q):
@@ -324,14 +372,16 @@ class AirbotSimulation:
         reference = self.trajectory
         if reference is not None:
             self._trace_step += 1
-            self.elapsed = min(self.elapsed + DT, reference.duration)
+            self.elapsed = min(self.elapsed + self.dt, reference.duration)
             self.target, self.target_velocity, self.target_acceleration = reference.sample(self.elapsed)
             if self.elapsed >= reference.duration:
                 self.trajectory = None
         self._drive(self.target, self.target_velocity)
+        if self.task_scene is not None:
+            self.task_scene.prepare_step()
         self.sim.step(render=render)
-        self.robot.update(DT)
-        self.sensor.update(DT)
+        self.robot.update(self.dt)
+        self.sensor.update(self.dt)
         self.tick += 1
         q, qd = self.q(), self.qd()
         if not np.isfinite([q, qd]).all():
@@ -339,6 +389,8 @@ class AirbotSimulation:
             self.fault = "non-finite joint feedback"
             raise RuntimeError(self.fault)
         _, forces = self.sim_contact()
+        if self.task_scene is not None:
+            forces = self.task_scene.after_step(self, forces)
         if not np.isfinite(forces).all():
             self.stop("non-finite contact feedback")
             raise RuntimeError(self.fault)
@@ -382,7 +434,7 @@ class AirbotSimulation:
             "target_velocity_rad_s": self.target_velocity.tolist(), "joint_names": list(self.model.joint_names),
             "gravity_feedforward_Nm": self.gravity_effort.tolist(),
             "limits_rad": self._limit.tolist(), "documented_velocity_rad_s": self.model.velocity.tolist(),
-            "sim_velocity_limit_rad_s": np.minimum(self.model.velocity, SIM_SPEED).tolist(),
+            "sim_velocity_limit_rad_s": np.minimum(self.model.velocity, self.speed_limit).tolist(),
             "base_world": pose(base_p, base_r), "link6_world": pose(tip_p, tip_r),
             "flange_world": pose(flange_p, flange_r), "flange_base": pose(*flange_base),
             "tcp_world": pose(tcp_p, tcp_r), "tcp_base": pose(*tcp_base),

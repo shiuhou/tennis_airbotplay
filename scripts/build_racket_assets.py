@@ -25,8 +25,8 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def export_mesh(shape, path):
-    vertices, faces = shape.tessellate(0.08, 0.16)
+def export_mesh(shape, path, angular_tolerance=0.16):
+    vertices, faces = shape.tessellate(0.08, angular_tolerance)
     points = np.array([p.toTuple() for p in vertices]) / 1000
     triangles = points[np.array(faces)]
     cross = np.cross(triangles[:, 1]-triangles[:, 0], triangles[:, 2]-triangles[:, 0])
@@ -65,6 +65,16 @@ def main():
         data.update(volume_m3=props.Mass()*1e-9,
                     center_of_mass_link6_m=(np.array(props.CentreOfMass().Coord())/1000).tolist(),
                     inertia_per_kg_m2=unit_tensor.tolist())
+        if name == 'paddle':
+            # The thick handle ends below link6 Z=205 mm. Separate it from
+            # the blade so convex cooking cannot bridge across the flat face.
+            data['collision_split_link6_z_m'] = 0.205
+            data['collision_parts'] = []
+            for label, z0, z1 in [('handle', 0, 205), ('blade', 205, 400)]:
+                box = cq.Solid.makeBox(400, 400, z1-z0, cq.Vector(-200, -200, z0))
+                piece = shape.intersect(box)
+                assert piece.isValid() and len(piece.Solids()) == 1
+                data['collision_parts'].append(export_mesh(piece, OUTPUT/f'paddle_{label}_collision.STL', 0.08))
         metadata['components'][name] = data
     paddle = shapes[PARTS['paddle']]
     planes = [f for f in paddle.Faces() if f.geomType() == 'PLANE']
