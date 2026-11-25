@@ -1,0 +1,16 @@
+{
+  "schema": "airbot-contact-bc-v1",
+  "seeds": [7101, 7102, 7103],
+  "optimizer": "Adam",
+  "learning_rate": 0.0005,
+  "updates": 2000,
+  "log_interval": 100,
+  "trajectory_weighting": "equal_mean_over_steps_and_joints",
+  "minimum_contacts_per_seed": 3,
+  "noise_repetitions": 10,
+  "noise_seed": 8400,
+  "noise_std": 0.3,
+  "noise_is_diagnostic_only": true,
+  "checkpoint_selection": "last",
+  "maximum_fit_seconds": 1800
+}

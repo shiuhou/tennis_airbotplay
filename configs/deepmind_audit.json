@@ -1,0 +1,19 @@
+{
+  "schema": "deepmind-airbot-feasibility-audit-v1",
+  "repository": "https://github.com/google-deepmind/competitive_robot_table_tennis",
+  "commit": "54cf18e41a8f134d98ad38710001ed50aabb8ebc",
+  "low_spin_norm_max_rad_s": 10.0,
+  "spin_scope": "Conservative screening threshold, not a validated spin-physics domain; all physical replays explicitly set omega=0",
+  "horizon_s": 2.0,
+  "canonicalize_opposite_direction": true,
+  "candidate_planes_x_m": [-1.2, -1.1, -1.0],
+  "search_max_rows": 96,
+  "selection_seed": 8120,
+  "split_seed": 8121,
+  "split_ratio": [0.6, 0.2, 0.2],
+  "split_scope": "Raw row identity only; source has no session/rally grouping. All derived states inherit row split; not proven independent sessions",
+  "candidate_scope": "Finite search, offline oracle, fixed nominal face interception through original six-joint action; no PPO changes",
+  "cross_replay_max_rows": 12,
+  "physics_hz": 960,
+  "policy_hz": 48
+}

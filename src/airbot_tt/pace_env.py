@@ -1,7 +1,7 @@
 """M7 fixed-arm vector scene using Isaac Lab InteractiveScene.
 
 Explicit terminal observations precede partial resets. No normal-step state writes.
-The initial A/B integration uses CPU teacher only at serve reset; no online MLP.
+Explicit E-online / E-frozen / E-mean add observable-history hints; critic and D rewards are unchanged.
 """
 import json
 import math
@@ -17,13 +17,26 @@ from .config import ROOT, CONTACT_TRIP_N
 from .runtime import _articulation_config, configure_racket_colliders
 from .tool import racket_model
 from .ball_scene import BallTestbed
-from .pace_control import PositionCommand, TensorShotEvents
-from .pace_guidance import apex_teacher
+from .pace_control import PositionCommand, TensorShotEvents, TensorReleaseLatch
+from .pace_guidance import apex_teacher, return_teacher, guidance_rewards
 
 
 class PaceEnv:
-    def __init__(self,num_envs=1,device='cuda:0',seed=7101,group='A',decimation=None,serve_y_half_range_m=None,serve_z_m=None):
-        if group not in ('A','B'): raise ValueError('Only initial A/B integration is implemented')
+    def __init__(self,num_envs=1,device='cuda:0',seed=7101,group='A',decimation=None,serve_y_half_range_m=None,serve_z_m=None,serve_bank=None,frozen_predictor=None,mean_predictor=None):
+        if group not in ('A','B','C','D','E','E-online','E-frozen','E-mean'):
+            raise ValueError('Implemented groups: A, B, C, D, E (online), E-online, E-frozen, E-mean')
+        if (group=='E-frozen') != (frozen_predictor is not None):
+            raise ValueError('E-frozen requires an explicit frozen predictor artifact; other groups reject it')
+        if (group=='E-mean') != (mean_predictor is not None):
+            raise ValueError('E-mean requires an explicit mean artifact; other groups reject it')
+        self.predictor_mode='mean' if group=='E-mean' else ('frozen' if group=='E-frozen' else ('online' if group in ('E','E-online') else 'none'))
+        self.online=None;self.frozen=None
+        self.serve_bank=None
+        if serve_bank is not None:
+            if group!='A' or serve_y_half_range_m is not None or serve_z_m is not None:
+                raise ValueError('Fixed serve-bank diagnostic requires A without synthetic serve overrides')
+            from .pace_serves import FixedServeBank
+            self.serve_bank=FixedServeBank(serve_bank)
         self.cfg=json.loads((ROOT/'configs/pace_rl.json').read_text())
         self.strike=json.loads((ROOT/'configs/strike.json').read_text())
         if serve_y_half_range_m is not None:
@@ -40,6 +53,11 @@ class PaceEnv:
         self.decimation=self.cfg['decimation'] if decimation is None else decimation
         if self.decimation<=0 or self.cfg['physics_hz']%self.decimation: raise ValueError('Integer fixed policy rate required')
         self.dt=1/self.cfg['physics_hz'];self.policy_dt=self.dt*self.decimation
+        if self.predictor_mode in ('frozen','mean'):
+            from .pace_predictor import FrozenPredictor,FixedMeanPredictor
+            self.frozen=(FixedMeanPredictor(num_envs,artifact=mean_predictor) if self.predictor_mode=='mean'
+                         else FrozenPredictor(num_envs,artifact=frozen_predictor))
+            self.frozen.validate_environment(self.strike,self.cfg['physics_hz'],self.decimation)
         self.model=racket_model(ROOT/'configs/racket.json')
         self.sim=sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=self.dt,device=device,
             physx=sim_utils.PhysxCfg(enable_ccd=True,bounce_threshold_velocity=.01)))
@@ -87,18 +105,44 @@ class PaceEnv:
         self.events=TensorShotEvents(num_envs,device,self.bc,self.shot['timeout_s'])
         self.elapsed=torch.zeros(num_envs,device=device)
         self.previous_action=torch.zeros(num_envs,6,device=device)
-        self.actor_history=torch.zeros(num_envs,5,23,device=device)
+        from .pace_predictor import OnlinePredictor
+        self.online=OnlinePredictor(num_envs) if self.predictor_mode=='online' else None
+        self.prediction_collect=True
+        self.actor_width=27 if self.predictor_module is not None else 23
+        self.prediction=torch.zeros(num_envs,4,device=device)
+        self.policy_index=torch.zeros(num_envs,dtype=torch.long,device=device)
+        self.first_prediction=torch.full((num_envs,),-1.,device=device)
+        self.first_hint_used=self.first_prediction.clone()
+        self.hint_steps=torch.zeros(num_envs,dtype=torch.long,device=device)
+        self.prehit_steps=self.hint_steps.clone();self.hit_reward_steps=self.hint_steps.clone()
+        self.hint_missing=torch.zeros(num_envs,3,dtype=torch.long,device=device)
+        self.hint_reference_steps=self.hint_steps.clone()
+        self.hint_error_sq_sum=torch.zeros(num_envs,device=device)
+        self.actor_history=torch.zeros(num_envs,5,self.actor_width,device=device)
         self.critic_history=torch.zeros(num_envs,5,40,device=device)
         self.teacher_point=torch.zeros(num_envs,3,device=device)
         self.teacher_time=torch.zeros(num_envs,device=device)
         self.teacher_valid=torch.zeros(num_envs,dtype=torch.bool,device=device)
         self.serve_id=torch.zeros(num_envs,dtype=torch.long,device=device)
         self.rng=[np.random.default_rng(np.random.SeedSequence([seed,i])) for i in range(num_envs)]
+        self.bank_index=np.full(num_envs,-1,dtype=np.int64)
+        self.bank_initial_states=np.zeros((num_envs,6),dtype=float)
+        self.bank_draws=[]
+        self.bank_cycle=None
+        if self.serve_bank is not None:self.seed_bank(seed)
         self.state_writes=0
         self.distance_min=torch.full((num_envs,),float('inf'),device=device)
         self.valid_seconds=torch.zeros(num_envs,device=device);self.plateau_seconds=self.valid_seconds.clone()
         self.episode_reward=self.valid_seconds.clone();self.episode_guidance=self.valid_seconds.clone()
+        self.release=TensorReleaseLatch(num_envs,device)
+        self.episode_return=self.valid_seconds.clone()
+        self.return_prediction_valid=torch.zeros(num_envs,dtype=torch.bool,device=device)
+        self.return_records=[None for _ in range(num_envs)]
         self.reset(self.ids)
+
+    @property
+    def predictor_module(self):
+        return self.frozen if self.predictor_mode in ('frozen','mean') else self.online
 
     def tensor(self,x):
         if isinstance(x,torch.Tensor):return x.to(device=self.device,dtype=torch.float32)
@@ -114,15 +158,46 @@ class PaceEnv:
         v=self.robot.data.body_lin_vel_w[:,self.paddle]+torch.cross(self.robot.data.body_ang_vel_w[:,self.paddle],r,dim=-1)
         return p-self.origins,q,v
 
-    def reset(self,ids,serve=None):
+    def seed_bank(self,seed):
+        """Restart bank schedules/logs; caller must next reset all environments."""
+        if self.serve_bank is None:raise ValueError('No fixed serve bank is configured')
+        from .pace_serves import ShuffledServeCycles
+        self.bank_cycle=ShuffledServeCycles(len(self.serve_bank.rows),self.n,seed)
+        self.bank_index.fill(-1)
+        self.bank_initial_states.fill(0)
+        self.bank_draws=[]
+
+    def reset(self,ids,serve=None,bank_indices=None):
         ids=torch.as_tensor(ids,dtype=torch.long,device=self.device)
         if ids.numel()==0:return
-        values=[]
-        for i in ids.cpu().tolist():
-            c=self.strike
-            values.append(np.r_[np.array(c['serve_position_m'])+self.rng[i].uniform(-1,1,3)*c['position_half_range_m'],
-                                np.array(c['serve_velocity_m_s'])+self.rng[i].uniform(-1,1,3)*c['velocity_half_range_m_s']])
-        states=self.tensor(values) if serve is None else self.tensor(serve).reshape(-1,6).expand(len(ids),-1)
+        selected=ids.cpu().tolist()
+        if self.serve_bank is None:
+            if bank_indices is not None:raise ValueError('Bank indices require a fixed serve bank')
+            # Preserve the original synthetic RNG consumption, including explicit-state resets.
+            values=[]
+            for i in selected:
+                c=self.strike
+                values.append(np.r_[np.array(c['serve_position_m'])+self.rng[i].uniform(-1,1,3)*c['position_half_range_m'],
+                                    np.array(c['serve_velocity_m_s'])+self.rng[i].uniform(-1,1,3)*c['velocity_half_range_m_s']])
+            states=self.tensor(values) if serve is None else self.tensor(serve).reshape(-1,6).expand(len(ids),-1)
+        else:
+            if serve is not None:raise ValueError('Use bank_indices for explicit fixed-bank evaluation')
+            if bank_indices is None:
+                indices=np.array([self.bank_cycle.next(i) for i in selected],dtype=np.int64)
+            else:
+                if isinstance(bank_indices,torch.Tensor):bank_indices=bank_indices.detach().cpu().numpy()
+                indices=np.asarray(bank_indices)
+                if indices.shape!=(len(selected),) or not np.issubdtype(indices.dtype,np.integer):
+                    raise ValueError('Provide one integer bank index per selected environment')
+                if np.any(indices<0) or np.any(indices>=len(self.serve_bank.rows)):
+                    raise ValueError('Bank index out of range')
+            values=self.serve_bank.states[indices]
+            self.bank_index[selected]=indices
+            self.bank_initial_states[selected]=values
+            for i,index in zip(selected,indices):
+                self.bank_draws.append(dict(env=i,raw_id=self.serve_bank.rows[int(index)]['id'],
+                    serve=int(self.serve_id[i])+1,explicit=bank_indices is not None))
+            states=self.tensor(values)
         # Reset-only CPU reference: no per-policy-step SciPy loop, no hidden online predictor.
         teachers=[apex_teacher(row) for row in states.cpu().numpy()]
         self.teacher_point[ids]=self.tensor([t['point'] for t in teachers])
@@ -138,9 +213,41 @@ class PaceEnv:
         self.command.reset(ids);self.elapsed[ids]=0;
         self.previous_action[ids]=0;self.events.reset(ids);self.serve_id[ids]+=1
         self.distance_min[ids]=float('inf');self.valid_seconds[ids]=0;self.plateau_seconds[ids]=0;self.episode_reward[ids]=0;self.episode_guidance[ids]=0
+        self.release.reset(ids);self.episode_return[ids]=0;self.return_prediction_valid[ids]=False
+        for i in ids.cpu().tolist():self.return_records[i]=None
+        self.policy_index[ids]=0;self.prediction[ids]=0
+        self.first_prediction[ids]=-1;self.first_hint_used[ids]=-1
+        self.hint_steps[ids]=0;self.prehit_steps[ids]=0;self.hit_reward_steps[ids]=0;self.hint_missing[ids]=0
+        self.hint_reference_steps[ids]=0;self.hint_error_sq_sum[ids]=0
+        if self.predictor_module is not None:
+            self.predictor_module.hook.reset(ids.cpu().tolist());self.refresh_prediction(ids)
         actor,critic=self.frames()
         self.actor_history[ids]=actor[ids,None,:].expand(-1,5,-1)
         self.critic_history[ids]=critic[ids,None,:].expand(-1,5,-1)
+        return self.observations()
+
+    def refresh_prediction(self,ids=None):
+        selected=self.ids if ids is None else ids
+        positions=self.state()[:,:3].detach().cpu().numpy()
+        # Integer policy indices avoid floating-point drift from 960 Hz elapsed sums.
+        times=self.policy_index.cpu().numpy()*self.policy_dt
+        output=self.predictor_module.observe(positions,times,self.serve_id.cpu().numpy(),
+                                   np.isfinite(positions).all(1),selected.cpu().tolist())
+        self.prediction[selected]=output.to(self.device)[selected]
+        first=(self.first_prediction[selected]<0)&(self.prediction[selected,3]>0)
+        chosen=selected[first];self.first_prediction[chosen]=self.policy_index[chosen]*self.policy_dt
+        if ids is None and self.prediction_collect and self.online is not None:
+            label_valid=self.teacher_valid & (self.elapsed<self.teacher_time) & (self.events.phase<2) & (self.events.outcome==0)
+            self.online.collect(self.teacher_point.cpu().numpy(),label_valid.cpu().numpy())
+
+    def refresh_after_predictor_update(self):
+        if self.online is None:
+            raise RuntimeError('Only E-online may refresh after a predictor update')
+        # Recompute only the latest frame; do not append the same sample twice.
+        self.prediction=self.online.hook.current().to(self.device)
+        first=(self.first_prediction<0)&(self.prediction[:,3]>0)
+        self.first_prediction[first]=self.policy_index[first]*self.policy_dt
+        self.actor_history[:,-1,23:]=self.prediction.clamp(-self.cfg['observation_clip'],self.cfg['observation_clip'])
         return self.observations()
 
     def frames(self):
@@ -151,6 +258,7 @@ class PaceEnv:
         critic=torch.cat((actor[:,:18],ball,self.teacher_point*valid[:,None],valid[:,None],
                           torch.clamp(self.teacher_time-self.elapsed,min=0)[:,None]*valid[:,None],p,v,
                           torch.nn.functional.one_hot(torch.where(self.events.outcome>0,3,self.events.phase.clamp_max(2)),4), (self.elapsed/self.shot['timeout_s'])[:,None]),1)
+        if self.predictor_module is not None:actor=torch.cat((actor,self.prediction),1)
         return actor.clamp(-self.cfg['observation_clip'],self.cfg['observation_clip']),critic.clamp(-self.cfg['observation_clip'],self.cfg['observation_clip'])
 
     def observations(self):return self.actor_history.flatten(1).clone(),self.critic_history.flatten(1).clone()
@@ -187,12 +295,43 @@ class PaceEnv:
         self.valid_seconds+=valid*self.dt;self.plateau_seconds+=(valid & (distance<=.15))*self.dt
         g=self.guidance
         self.episode_guidance+=torch.exp(-distance.clamp_min(g['hit_floor_m'])/g['hit_std_m']**2)*valid*g['hit_weight']*self.dt
+        if self.group in ('C','D','E','E-online','E-frozen','E-mean'):
+            tcp,quat,tcp_velocity=self.tcp()
+            axis=torch.zeros_like(tcp);axis[:,2]=1
+            normal=quat_rotate(quat,axis)
+            legal=self.events.hit & (self.events.outcome==0) & ~contacts[:,3] & ~contacts[:,0] & ~contacts[:,1]
+            released=self.release.update(self.elapsed,state,contacts[:,2],legal,tcp,normal,tcp_velocity)
+            for i in released.nonzero().flatten().cpu().tolist():
+                measured=state[i].cpu().numpy();prediction=return_teacher(measured,config=self.bc)
+                self.return_prediction_valid[i]=prediction['valid']
+                parts=guidance_rewards(tcp[i].cpu().numpy(),{'valid':False},prediction,cfg=self.guidance)
+                value=parts['weighted']['landing']+parts['weighted']['net']
+                self.episode_return[i]+=value
+                self.return_records[i]=dict(time_s=float(self.elapsed[i]),state=measured.tolist(),
+                    prediction=prediction,reward=value,components=parts['weighted'])
         return first_hit
 
     def step(self,action,*,auto_reset=True):
         if action.shape!=(self.n,6) or not torch.isfinite(action).all():raise ValueError('Expected finite Nx6 action')
         if (self.events.outcome>0).any():raise RuntimeError('Reset finished episodes before stepping')
+        used=torch.zeros(self.n,dtype=torch.bool,device=self.device)
+        prehit=~self.events.hit & (self.events.outcome==0)
+        self.prehit_steps+=prehit.long()
+        if self.predictor_module is not None:
+            used=prehit & (self.actor_history[:,-1,26]>0)
+            first=used & (self.first_hint_used<0)
+            self.first_hint_used[first]=self.policy_index[first]*self.policy_dt
+            self.hint_steps+=used.long()
+            lengths=torch.tensor([len(h) for h in self.predictor_module.hook.history],device=self.device)
+            self.hint_missing[:,0]+=(prehit & ~used & (lengths<5)).long()
+            self.hint_missing[:,1]+=(prehit & ~used & (lengths==5) & (not self.predictor_module.predictor.trained)).long()
+            self.hint_missing[:,2]+=(prehit & ~used & (lengths==5) & self.predictor_module.predictor.trained).long()
+        hint_reference=used & self.teacher_valid & (self.elapsed<self.teacher_time)
+        hint_error=((self.prediction[:,:3]-self.teacher_point)**2).sum(1)*hint_reference
+        self.hint_reference_steps+=hint_reference.long();self.hint_error_sq_sum+=hint_error
         old=self.previous_action.clone();self.command.set_action(action)
+        previous_release=self.release.reason.clone()
+        previous_return=self.episode_return.clone()
         previous_guidance=self.episode_guidance.clone()
         hit=torch.zeros(self.n,dtype=torch.bool,device=self.device)
         for _ in range(self.decimation): hit|=self.physics_step()
@@ -202,15 +341,23 @@ class PaceEnv:
         r=self.cfg['reward'];dense=self.episode_guidance-previous_guidance
         reward=hit*r['contact']+(self.events.outcome==6)*r['legal_return']+r['action_rate']*((action-old)**2).sum(1)*self.policy_dt
         reward+=(self.events.outcome==2)*r['fault']
-        if self.group=='B':reward+=dense
+        if self.group in ('B','D','E','E-online','E-frozen','E-mean'):reward+=dense
+        if self.group in ('C','D','E','E-online','E-frozen','E-mean'):reward+=self.episode_return-previous_return
         self.episode_reward+=reward
+        self.hit_reward_steps+=(dense>0).long()
+        self.policy_index+=1
+        if self.predictor_module is not None:self.refresh_prediction()
         a,c=self.frames();self.actor_history=torch.cat((self.actor_history[:,1:],a[:,None]),1);self.critic_history=torch.cat((self.critic_history[:,1:],c[:,None]),1)
         terminal=self.observations()
         terminated=(self.events.outcome>0)&(self.events.outcome!=9);truncated=self.events.outcome==9
         done=terminated|truncated
         info=dict(terminal_actor=terminal[0],terminal_critic=terminal[1],terminated=terminated.clone(),truncated=truncated.clone(),
                   q_request=self.command.request.clone(),q_applied=self.command.q.clone(),q_measured=self.robot.data.joint_pos[:,self.joints].clone(),
-                  guidance=dense.clone(),apex_distance=distance.clone(),episodes=[])
+                  guidance=dense.clone(),apex_distance=distance.clone(),episodes=[],
+                  prehit=prehit.clone(),prediction_used=used.clone(),hint_reference=hint_reference.clone(),hint_error_sq=hint_error.clone(),
+                  return_events=((self.release.reason==2)&(previous_release!=2)).clone(),
+                  return_valid_events=((self.release.reason==2)&(previous_release!=2)&self.return_prediction_valid).clone(),
+                  return_increment=(self.episode_return-previous_return).clone())
         ids=done.nonzero().flatten()
         for i in ids.cpu().tolist():
             row=dict(env=i,serve=int(self.serve_id[i]),outcome=self.events.names[int(self.events.outcome[i])],hit=bool(self.events.hit[i]),
@@ -220,6 +367,20 @@ class PaceEnv:
                      plateau_s=float(self.plateau_seconds[i]),guidance_sum=float(self.episode_guidance[i]),reward=float(self.episode_reward[i]),
                      target_success=bool(self.events.outcome[i]==6 and torch.all(abs(self.events.landing[i,:2]-self.tensor([.75,0]))<=self.strike['goal_half_width_m'])),
                      landing_error_m=float(torch.linalg.vector_norm(self.events.landing[i,:2]-self.tensor([.75,0]))) if self.events.outcome[i]==6 else None)
+            if self.serve_bank is not None:
+                row.update(raw_id=self.serve_bank.rows[int(self.bank_index[i])]['id'],
+                           initial_state=self.bank_initial_states[i].tolist())
+            row.update(prehit_policy_steps=int(self.prehit_steps[i]),hit_guidance_policy_steps=int(self.hit_reward_steps[i]))
+            if self.predictor_module is not None:
+                row.update(first_prediction_s=float(self.first_prediction[i]) if self.first_prediction[i]>=0 else None,
+                           first_hint_used_s=float(self.first_hint_used[i]) if self.first_hint_used[i]>=0 else None,
+                           prehit_hint_steps=int(self.hint_steps[i]),hint_missing=dict(zip(('history_short','untrained','invalid'),self.hint_missing[i].cpu().tolist())),
+                           predictor_updates=self.predictor_module.predictor.updates,
+                           predictor_mode=self.predictor_mode,hint_reference_steps=int(self.hint_reference_steps[i]),
+                           hint_error_sq_sum_m2=float(self.hint_error_sq_sum[i]),
+                           hint_teacher_rmse_m=float(torch.sqrt(self.hint_error_sq_sum[i]/self.hint_reference_steps[i])) if self.hint_reference_steps[i]>0 else None)
+            if self.group in ('C','D','E','E-online','E-frozen','E-mean'):
+                row.update(return_guidance=float(self.episode_return[i]),release_reason=self.release.reasons[int(self.release.reason[i])],return_record=self.return_records[i])
             info['episodes'].append(row)
         if auto_reset and ids.numel():self.reset(ids)
         return (*self.observations(),reward,done,info)

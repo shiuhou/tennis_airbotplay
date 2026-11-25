@@ -13,11 +13,18 @@ GROUPS = {
     'research': ['test_research_workflow'],
     'core': ['test_ball', 'test_motion', 'test_planning', 'test_prediction',
              'test_racket', 'test_single_shot', 'test_strike'],
-    'pace': ['test_pace_m6', 'test_pace_source_audit', 'test_pace_env'],
+    'pace': ['test_pace_m6', 'test_pace_source_audit', 'test_pace_env', 'test_pace_serves', 'test_pace_bc', 'test_recovery_fit'],
+    'frozen': ['test_pace_m6.FrozenPredictorTests', 'test_pace_m6.GuidanceTests',
+               'test_pace_m6.PredictorTests.test_hook_same_step_reset_and_observable_only',
+               'test_pace_env', 'test_pace_runner'],
+    'mean': ['test_pace_m6.FixedMeanPredictorTests', 'test_pace_m6.FrozenPredictorTests',
+             'test_pace_m6.GuidanceTests',
+             'test_pace_m6.PredictorTests.test_hook_same_step_reset_and_observable_only',
+             'test_pace_env', 'test_pace_runner'],
     'camera': ['test_camera_calibration'],
 }
 DEPENDENCIES = {'research': [], 'core': ['numpy', 'scipy'],
-                'pace': ['numpy', 'scipy', 'torch'], 'camera': ['numpy', 'cv2', 'pyorbbecsdk']}
+                'pace': ['numpy', 'scipy', 'torch'], 'frozen': ['numpy', 'scipy', 'torch'], 'mean': ['numpy', 'scipy', 'torch'], 'camera': ['numpy', 'cv2', 'pyorbbecsdk']}
 
 
 def status_for(result):

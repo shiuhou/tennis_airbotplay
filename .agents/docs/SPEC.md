@@ -119,3 +119,101 @@
 - A/B共同固定來球、控制、有效碰拍／合法事件、初始lr1e-5、seed與samples預算，只改hit guidance；新最終評測seed與預算在訓練前凍結。舊失敗全部保留；先做小規模診斷，不因短跑無效自動放大預算。完整五組、廣分布與真機不得由A/B短跑代稱完成。
 
 - 後續正式學習對照在訓練前預先保存／評測相同seed的未訓練Actor，與zero分開報告；初始化碰巧有效的動作不冒稱PPO增益。若追加於主評測後，明確標事後診斷，不能冒稱新的獨立驗證。
+
+## C Return Guidance接合驗收
+
+- 使用原return公式與權重，在首次有效拍面接觸結束、球相對拍面向外分離後評一次；接觸起始、非法事件、等待超時及reset不能誤發分數。重置按env隔離。零有效預測給0並保留原因，不把缺失值補成目標。
+- 對固定模型PhysX重播，A/B行為與已保存結果一致；有效且沒有後續物體接觸的自由飛行，預測落點／過網高度P95誤差≤20mm、事件時間≤10ms。至少8個可比較樣本；所有發球、invalid與後續接觸仍完整報告，不以排除後的準確率冒充全任務成功。
+- C與A共用m74-active-interception-v1、關節動作、控制、官方PPO與每seed6144 transitions；只增加return guidance。先保存未訓練Actor對照，固定最後checkpoint及新評測seed。不得從已讀7511挑模型。D/E與可達目標、BC分開實驗。
+
+
+## D擊球／回球組合對照
+
+- D只同時加入已驗證的B hit與C return項，保留A基本獎勵、同觀測、六維action、教師原式及桌邊無效遮罩。固定模型重播必須與C同結果，episode總分滿足D=C+hit（誤差≤1e-4），return分數不變；全量／部分reset不得殘留或影響其他env。
+- 沿C的離拍與自由飛行精度門檻，combined關卡PASS且來源一致後才訓練；每seed6144 transitions、三seed、固定最後模型。新共同評測與zero／相同初始化在訓練前登記；工程執行PASS和跨seed效用分開判定，不因未通過自動追加預算或變更教師。
+
+
+## E新分布資料與在線接口驗收
+
+- Z=2.3m沿原128/32/64條serve配額和原門檻，整serve先切分再開五點窗口；3D RMSE≤30mm且共同有效樣本優於等速。learned、訓練serve平均apex、等速、同位置歷史估速的物理基準均報告；反彈前／跨反彈／反彈後分報誤差、樣本數與覆蓋。舊M6的11.58mm不得代替新驗證，不用新結果改門檻。
+- E保留D的教師／reward／六維action；actor135維、critic200維，D actor115維。每次E訓練前保存自己的initial actor；同seed不能宣稱D/E初始策略相同。
+- 真向量環境與runner驗證same-step提示、部分reset隔離、無效觀測清歷史、未訓練valid=0、PPO與MSE梯度／參數隔離、checkpoint的模型／optimizer／RNG／更新次數契約。每回合記首次有效prediction時間、首次實際使用時間、擊球前提示步數及缺失原因；每更新記MSE與optimizer步數、hit有效步數／分數、return離拍／有效／實際評分事件。
+- 原計畫E-online獨立MSE：近期128個策略時刻窗口、batch1024、每rollout至多1 epoch、恰好前20次更新資格，資料不足跳過並記原因。離線模型只作精度驗證，不默默拿來初始化E-online。離線／接口未過不啟動E策略短對照，smoke只驗接口不作效用結論。
+- 五點predictor窗口首尾4/48秒；五幀actor各帶當時prediction可間接涵蓋9個時刻、8/48秒。須以實際組裝驗證，報告額外時間資訊，不能將D/E比較說成只有特徵內容不同。
+
+- 在線收斂診斷固定三個D模型與共同來球，只更新predictor；每條資料流20次資格、每次24策略步、16env，不追加PPO更新或重開test。每次記optimizer步、buffer樣本數、validation真值／教師RMSE與提示可用率。D不讀提示，故此處只稱「可提供的提示」，不能稱為D實際使用；第21次update須cutoff且權重／RNG／optimizer計數不變。
+
+- Batch診斷僅比較1024與32：同固定D行為、同初始化、同20次資格、每次相同buffer張量及shuffle RNG；只用既有validation，不重開test或依結果選checkpoint。兩組各記RMSE、optimizer步數與MSE耗時，驗證兩組第21次cutoff。承認32增加計算量；未授權改生產配置或PPO預算。
+
+
+## Predictor資料／擬合診斷邊界
+
+- 使用既有離線MLP、對應在線batch1024／32及固定離線train平均apex，分別測封存buffer和既有validation。統一對教師的3D RMSE，PhysX真值另報；保留XYZ偏移、去均值誤差及有效樣本數，不開test、不訓練或挑checkpoint。
+- 封存buffer無env／time／phase時明確標不可還原。必要補採只用固定D的72步、16env重播，按真正事件分組，核對局部／世界座標、單位、五點時間／serve、教師時刻、擊球／終止遮罩與資料快照；0次MSE／PPO更新。
+- 官方cutoff20與fresh-run字面21次資格的差異需明記；AIRBOT恰好20次為獨立固定契約，不隨診斷結果改動。E-online與E-frozen分開命名及結論，不能以離線模型悄悄替換在線從零主線。E-frozen的獨立契約見下節，歷史在線診斷不作其策略效用證據。
+
+## E-frozen：固定離線提示的獨立比較
+
+- D維持actor115／critic200；E-online與E-frozen皆actor135／critic200，原`E`名稱仍指在線從零。E-frozen顯式指定`configs/pace_frozen.json`，只載入已由既有validation選定的Z=2.3m官方MLP，不再擬合、選epoch、開held-out或更改在線配置。
+- 固定模型、訓練receipt、資料manifest、球參數、官方來源、schema及Z2.3／Y±.015m來球分布必須相符；缺檔、不相容、未訓練或遭更動的權重拒絕載入，不外推至Z2.2。推論不建predictor更新路徑，不收集MSE訓練buffer，不將predictor參數交給PPO optimizer；正常步進、PPO更新及磁碟重載前後核對權重不變與梯度隔離。
+- 沿用同serve的48Hz五點球位置、局部座標與same-step組裝；全量／部分reset、無效／非有限位置或時間戳／缺樣觀測清對應history，未滿窗口輸出0／invalid。提示可用性不得讀teacher有效性、真值速度或未來事件決定；教師只供原reward／critic及診斷，擊球前有效域與實際提示使用率另報。
+- checkpoint明記模式、凍結來源SHA、模型配置及權重，重載不靜默變成在線訓練。凍結模型建構／重載及initial評測不得改變policy抽樣RNG或正式訓練serve序列。每次PPO前保存E-frozen自己的135維initial Actor，initial與最後模型以同一提示模型評估；D同seed的115維Actor不能冒充相同初始策略。
+- 先通CPU契約及當前來源的真向量／控制／獎勵／凍結與重載關卡，並通過E-frozen自身runner smoke，才進入策略比較；新關卡使用獨立gates目錄。GPU關卡未跑為NOT_RUN，失敗先定位，不以既有離線精度或歷史在線smoke替代。預訓練成本另報：128條train、32條validation、4868訓練窗口、20epochs約3060 optimizer步與既有2.641s擬合時間；這不含資料收集成本，也不表示D/E總計算量相同。工程smoke成本亦獨立於三seed比較。
+- 短比較固定seeds7101–7103，各16env×24steps×16次更新=6144 transitions，固定最後checkpoint；只訓練E-frozen，保留既有D三模型。共同使用已讀過的eval7531，只評Z2.3的32球；零動作1、固定D3、E自身initial3／final3共10種策略、320個計分episode，重載檢查另列。D須在當前來源重評，舊hash不符不得直接聲稱舊結果仍可重現。此為重用開發題目的配對診斷，不是新的held-out證據。
+- 所有發球含故障、拒絕、漏接、非法與超時均留分母；分seed報有效碰拍、合法回球、目標命中、落點誤差與故障，另報final對D及對自身initial的變化。0/32與32/32分別標示觀察到的下限／上限飽和；在飽和指標上沒有提升不能直接推論提示無效，亦不能用挑出的seed或episode數宣稱獨立重複優勢。不因陰性結果追加樣本或換教師。
+- D位置歷史首尾83.3ms；E五幀提示可間接使用九時刻、首尾166.7ms。比較歸因限於凍結提示模組、額外資訊歷史及預訓練整體；不以本輪證明純預測內容優勢，亦不追加同維提示消融、新架構、BC或真機。
+
+## E-mean：同維度固定平均提示的獨立比較
+
+- 使用者後續授權獨立E-mean對E-frozen比較，另用工作區與證據目錄，不延長或改寫前節已完成的E-frozen對D實驗。E-mean顯式指定`configs/pace_mean.json`及`mode=mean`；保留Actor135／Critic200、六維action、D reward、原控制／物理／PPO及Z2.3／Y±.015m分布，不接BC或新架構。
+- 常數只取既有train seed6101的128條serve、4868個有效窗口教師label：先各serve平均，再對128個serve等權平均，依既有float32順序得到固定XYZ。不得用validation／held-out、後續回球結果或目標框重新擬合、選常數；來源SHA、配方與點值須與既有train平均基準一致。mean本身不建MLP、optimizer或RNG，不做MSE更新。
+- 即使輸出為常數，仍共用原五點history／same-step／valid／reset及五幀堆疊；不足五點、無效／非有限位置或時間、缺樣／跨serve時輸出0／invalid並清相應history。不可把常數提前放入暖機幀，也不可從teacher有效性或未來事件決定valid；不影響其他env。checkpoint包含顯式mean模式、常數、配方／來源及模型狀態hash，不得誤讀為learned／online或帶入可訓練狀態。
+- 三個seed7101–7103各正常建立一次官方ActorCritic135／200／6，所有Actor、Critic及std張量須逐值等於對應已固定E-frozen initial，才載入其同一組權重；不只比較seed、Actor或張量尺寸。保存E-mean自身initial及配對來源。相同權重不代表不同提示下的initial動作相同，兩組initial都須評估。
+- 構造、載入與initial評測不得消耗正式抽樣RNG或serve序列。CPU建構後RNG對照事前獨立重建的SHA；當前CPU／CUDA狀態在上述步驟前後核對，並保存本輪pre-rollout狀態。舊learned initial沒有保存CUDA RNG，不能宣稱已證明兩輪歷史GPU抽樣狀態逐值相同；行為分歧後的軌跡與reset次數也不要求相同。
+- 先通當前CPU、mean真向量／RNG／重載與原lifecycle／parity／control／combined，再以`mean-compat`對zero及固定learned initial／final做224個主要回合相容重播。保留歷史順序zero→D7101→learned initial／final7101→D7102→…，三個D各32球合計96個上下文回合另列，總實際320回合；來源、模型、離散結果及原10μm落點分量容差檢查通過後才做mean smoke。原receipt及失敗保留原SHA，當前相容報告另存；不得以恢復順序代稱已證明物理內部狀態完全重置。smoke固定1536 transitions，正式三seed各6144、固定最後checkpoint；smoke、相容與D上下文回合另列成本，不續接smoke或重訓learned基準。
+- 正式共同評測固定已讀7531／Z2.3，每種策略32球：zero1＋learned initial3／final3＋mean initial3／final3，共13種、416個主要計分episode。保持同一歷史前綴後再評mean，D96上下文另列，總實際512回合；D不混入416效用分母。每球只取預先指定首回合，所有拒絕／故障／失敗留分母；分seed報碰拍、合法、目標、結果分類、提示覆蓋及有實測合法落點的樣本數／誤差。比較learned-final與mean-final、兩者各自final與initial；不挑seed／checkpoint／常數或追加訓練預算。
+- 本比較控制輸入維度與初始張量，也控制窗口時序和valid。learned XYZ仍可壓縮九時刻166.7ms的位置資訊，mean XYZ不承載此動態歷史；直接位置仍是五時刻83.3ms。結果不能單獨歸因物理預測正確性，亦不能以416回合冒充416個獨立訓練重複。0/32與32/32標示下限／上限飽和，工程PASS與跨seed效用分報。
+
+
+## 同球動作展示
+
+固定原M5 validation_0與事前選定的A7101／B7101，M5使用原名義中央script，另有zero。普通運動維持關節驅動，不訓練、不改事件規則。首次碰拍以960Hz前後狀態記錄，TCP速度／幾何近似點速度分標；實際落點含失敗的首次post-hit桌接觸，不以預測補值。展示成功定義為該球合法回球，未命中目標另報；M5與PPO不同控制入口及單球適用範圍須說明。倉庫只保留代表圖及生成入口，影片與逐步資料留本地。
+
+
+## DeepMind Dataset-to-AIRBOT Feasibility Audit
+
+- 固定官方commit／原檔SHA及授權，原始九維狀態與ID保留。X/Y映射須proper旋轉、Z加桌高0.76m；相反方向明確旋轉，p/v/omega一致，檢查反向還原與spin norm。資料是初始狀態，不冒稱完整實測軌跡。
+- 低旋≤10rad/s為本輪保守篩選，非已驗證物理域；現有rollout強制zero-spin並保留raw omega。高旋與不符合現有首次己方bounce階段的資料分列，不算策略失敗。不偷偷裁切或重定時。
+- 動態見證維持原六維action／範圍／速度／加速度／反應／姿態及碰撞。全PositionCommand（含hold／最後姿態）預檢後才PhysX；命令到位、有效碰拍、合法回球、目標命中分開，不把有限搜尋失敗說成物理不可達。
+- 固定腳本跨球重播不得再看球求IK或重定時，保留zero及M5固定參考。完整母集合／搜尋數／不同rawrow／重播case分母各報；單一已測腳本失效不證明不存在其他通用動作。
+- split先按raw ID固定，衍生資料跟母ID；來源無session故不宣稱session獨立，被查看過的test不冒稱未見策略效用測試。無合法回球見證不發布成功回球資料集，不接入PPO，不增加訓練預算。
+
+
+### 動作範圍隔離診斷（2026-11-23）
+
+允許在獨立診斷中以同來球／候選／初始化／求解預算比較±0.6與±1.0rad，唯一變因為action範圍，仍裁到原URDF限制。保持安裝／ready／速度／加速度／碰撞不變，不修改正式PPO設定或直接重縮放舊checkpoint。姿態通過後才驗完整命令和PhysX；沒有姿態解時，後續為NOT_RUN，不能歸因速度或宣稱物理不可達。
+
+
+### 五顆DeepMind train接觸案例的A組探索（2026-11-23）
+
+使用者授權在未有合法回球腳本的情況下，獨立用9378／10818／5255／12250／14852做有限PPO探索。這是對上述「不接入PPO」的明確小範圍研究擴展，不將343筆升級為已驗可回球分布。原始固定五球／zero-spin、原安裝ready／六維±.6及原v/a、A事件reward。三seed7101–7103、各6144transitions，固定最後checkpoint；zero與各自initial對照，逐球contact/legal/fault，35主要episode及15重載重播分報。bank全量／部分／自動reset須保持來源ID、座標與歷史隔離，實際序列與互動數保存。先通既有控制生命週期與五腳本重播；未學成不等於不可行，不以測試球、重播次數或單seed當泛化證據。
+
+
+### 五球接觸BC初始化隔離對照（2026-11-23）
+
+在原五球A組條件上，只變更Actor初始權重。固定三seed7101–7103、同原initial、Adam5e-4與2000次全資料更新，軌跡等權，固定最後模型。示範只含各球第一個完整episode的pre-step Actor115觀測與六維requested action快照；raw ID／時刻只作metadata，無reset後或padding樣本。原五腳本5/5碰拍須重現，4wrong_bounce/1out明標接觸示範。BC不改Critic/std；各seed至少3/5閉環有效碰拍、三者都過才啟動BC+PPO，不挑seed。每球10次配對噪聲診斷共300episode，維持std=.3；依使用者決策，其結果不否決已通接觸門檻的短PPO。PPO每seed仍6144transitions、原A/reward/control/physics，用fresh optimizer並隔離BC/eval RNG；BC後std按原PPO正常學習。baseline來源／cfg／manifest及zero/initial/final重播一致才沿用歷史結果。失敗不加BC或PPO預算；工程PASS與接觸gate、合法回球收益分報，五train球與噪聲重複不作泛化證據。示範及BC成本另報。
+
+後續無訓練回饋診斷固定既有seed7101及原五球，僅在Actor輸入副本中以同tick示範替換五幀前動作、速度、兩者，另保留自主基線，共20個計分episode。狀態／控制記憶／真實前動作不改；首episode外及示範耗盡後恢復實際觀測並記數。先報0–50ms及50–200ms真實q／qd與動作誤差，再報碰拍及結果；較晚偏差只比較雙方接觸前共同窗口。完整輸入與hash保存、原基線重現、推論無狀態污染才算診斷工程PASS。混合觀測可能不一致，介入結果不升級原BC門檻、不授權新訓練，也不證明刪除特徵即可修復。
+
+### 五球偏離狀態接管與修正BC（2026-11-24）
+
+同五球／既有seed7101 BC於第6、9、12個48Hz決策tick接續原腳本，15案保留全部分母。接管使用正常關節驅動、原即時觀測及控制記憶。至少三個不同球在切換實測q相對同tick示範RMSE≥.01rad、原自主無有效碰拍且接續重獲有效碰拍，才授權本輪修正BC。通過時採所有實際成功接續（含較小偏離），只取接管至首有效碰拍的pre-step觀測與當步請求。與原237筆合併，各球等權，球內原示範與可用修正來源等權，來源內軌跡等權。三個原始初值各一次Adam5e-4、2000全資料更新、固定最後Actor。沿用原三seed自主3/5門檻、配對噪聲與條件短PPO。全程原A設定；本研究只評固定五個train球。
+
+追加無訓練單球診斷固定修正BC7101最後模型及9378，只比較自主與tick12=250ms原腳本接管兩個正常reset回合。狀態／觀測歷史／raw前動作／控制記憶不改；前綴到tick12推論前與前12個請求動作一致，原自主結果重現、模型／來源不變及兩案完整終局才算工程PASS。與舊三條9378修正後綴按同tick、共同碰拍前逐欄比較。接管成功只支持研究新策略狀態的有效修正資料，不升級自主BC門檻或授權再訓練；未救回則調查該時點的可恢復範圍。
+
+
+### 自主BC修正的有界工作包（2026-11-24）
+
+追加授權容許最多三個主要候選，每候選三seed各≤2000次更新，原initial、固定最後checkpoint；只改一類資料、權重、loss或優化因素。原五球、安裝ready、六維±.6rad、速度／加速度限制、115維觀測及物理成功判定不變。新增修正資料只來自真實接管後恢復有效碰拍的pre-step觀測／requested action，不採learner錯誤前綴、reset或padding。每球等權，原示範／恢復來源各半，恢復內軌跡等權。所有候選完整報三seed，包括退化。
+
+三seed從正常reset、僅使用自身觀測，各≥3/5有效碰拍並重載一致後，直接完成既定300次配對噪聲及各6144 transitions短PPO，不增加前置門檻。三候選仍未通過便停止擴張、明報尚未解決。候選與舊BC採不同receipt schema，保留原歷史來源驗證與失敗結果；歷史來源有變動需精確還原核對或另建相容性證據，不重寫舊receipt。接觸驗收與合法回球結果分開，固定train題目不宣稱泛化。

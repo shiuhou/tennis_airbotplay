@@ -1,0 +1,190 @@
+{
+  "schema": "airbot-e-mean-v1",
+  "mode": "mean",
+  "description": "Explicit E-mean control: existing train-only equal-serve mean, same 135-dimensional observation and history validity as E-frozen; no fitting or raw validation/held-out access.",
+  "input": {
+    "shape": [
+      5,
+      3
+    ],
+    "order": "oldest_first_xyz",
+    "frame": "local_table_ground_origin",
+    "unit": "m",
+    "policy_hz": 48,
+    "normalization": "none"
+  },
+  "output": {
+    "shape": [
+      3
+    ],
+    "meaning": "post_bounce_apex",
+    "frame": "local_table_ground_origin",
+    "unit": "m"
+  },
+  "constant_point_m": [
+    -1.8077995777130127,
+    0.0010447774548083544,
+    1.6746927499771118
+  ],
+  "recipe": {
+    "split": "train",
+    "seed": 6101,
+    "serves": 128,
+    "windows": 4868,
+    "window": "windows(state[:,:3],time,serve,ones,target,valid)",
+    "reduction": "mean_per_serve_then_mean_across_serves",
+    "dtype": "float32",
+    "validation_used": false,
+    "heldout_used": false
+  },
+  "settings": {
+    "schema": "airbot-m6-apex-v1",
+    "scope": "Offline clean synthetic M5-distribution apex guidance; not PPO or real perception",
+    "physics_hz": 960,
+    "decimation": 20,
+    "history": 5,
+    "predictor": {
+      "hidden": [
+        64,
+        64
+      ],
+      "lr": 0.0005,
+      "batch_size": 32,
+      "epochs": 20,
+      "seed": 6100
+    },
+    "splits": {
+      "train": {
+        "seed": 6101,
+        "serves": 128
+      },
+      "validation": {
+        "seed": 6102,
+        "serves": 32
+      },
+      "heldout": {
+        "seed": 6104,
+        "serves": 64
+      }
+    },
+    "reward": {
+      "hit_std_m": 0.5,
+      "hit_floor_m": 0.15,
+      "landing_intercept": 3.0,
+      "net_target_z_m": 1.11,
+      "net_std_m": 0.4,
+      "goal_xy_m": [
+        0.75,
+        0.0
+      ],
+      "hit_weight": 2.0,
+      "landing_weight": 60.0,
+      "net_weight": 100.0,
+      "source_event_dt_s": 0.02
+    },
+    "gate": {
+      "predictor_rmse_m": 0.03,
+      "teacher_p95_position_m": 0.02,
+      "teacher_p95_time_s": 0.01
+    }
+  },
+  "distribution": {
+    "version": "m5-limited-high-bounce-v1",
+    "scope": "Synthetic high-bounce zero-spin development and validation; not final evaluation or measured serves",
+    "ready_q_rad": [
+      0.0,
+      -0.1,
+      0.4,
+      1.5716,
+      1.1,
+      -1.5713
+    ],
+    "velocity_limit_rad_s": 1.5,
+    "acceleration_limit_rad_s2": 8.0,
+    "simulation_speed_limit_rad_s": 2.0,
+    "reaction_delay_s": 0.05,
+    "recovery_s": 0.3,
+    "candidate_after_bounce_s": [
+      0.16,
+      0.18,
+      0.2,
+      0.22
+    ],
+    "return_flight_s": [
+      0.55,
+      0.6,
+      0.5
+    ],
+    "goals_xy_m": [
+      [
+        0.75,
+        -0.45
+      ],
+      [
+        0.75,
+        0.0
+      ],
+      [
+        0.75,
+        0.45
+      ]
+    ],
+    "goal_half_width_m": 0.2,
+    "development_seed": 501,
+    "validation_seed": 502,
+    "development_count": 3,
+    "validation_count": 12,
+    "serve_position_m": [
+      0.5,
+      0.0,
+      2.3
+    ],
+    "serve_velocity_m_s": [
+      -3.3,
+      0.0,
+      -1.4
+    ],
+    "position_half_range_m": [
+      0.0,
+      0.015,
+      0.01
+    ],
+    "velocity_half_range_m_s": [
+      0.02,
+      0.0,
+      0.01
+    ],
+    "physics_hz": 960
+  },
+  "files": {
+    "train": {
+      "path": ".agents/runs/foundation/m7/m74e/data/train.npz",
+      "sha256": "965b33950bc58a901d9f53fcccf4580ae0151531093005ff7ff148037308ac3d"
+    },
+    "dataset": {
+      "path": ".agents/runs/foundation/m7/m74e/data/dataset.json",
+      "sha256": "254dd365adeb7fa47aa520c09d27957c0e2f75d7c37f56b0255bd102dededb3a"
+    },
+    "cross": {
+      "path": ".agents/runs/foundation/m7/m74e/data_audit/cross.json",
+      "sha256": "6ad8281864ed5e947ffdf469b1ae2420a88608ada7c421fe0d20f5458a5dea8b"
+    },
+    "frozen_artifact": {
+      "path": "configs/pace_frozen.json",
+      "sha256": "00a4456da2b5c58bd56d3b8f0b4d441b950a38e666487407b7d9a8ade43b2134"
+    },
+    "source_snapshot": {
+      "path": ".agents/runs/foundation/m7/e_mean/source_snapshot.json",
+      "sha256": "da44cfaa474046e7f835f9c6e8e1c4e9d1a2fa6cec54093645fc3978a6538255"
+    }
+  },
+  "runtime_source_sha256": {
+    "configs/pace.json": "7b0adce6996a69885f74a0e1c8e5a0baa8dbcf952df879294061c1ea59cd53a4",
+    "configs/pace_sources.json": "537e4f1ae0ddb7c927274f3c6bb462f9686301fe75f2d6dccc918aec5eecb042",
+    "configs/ball.json": "e0a324ef77573cf7e0ff076e4ffb0ef802200b5228cf8e67c1f676798f3d72a3",
+    "configs/strike.json": "b5ab2714251abeb19b0200cddda43b4c3063a81faef143591b1be99cb7145908",
+    "src/airbot_tt/pace_guidance.py": "8ff1a0a24142d08c47e560ba757a585b55f295ef876365bc54d55546a06fc401",
+    "src/airbot_tt/pace_predictor.py": "1214b3dd577762096dec326ef34c9286f7d65e008b86a6a3ceb035249d789a71"
+  },
+  "model_state_sha256": "05b4bad81b152b16af3200cc1f52f653f6b80df2b3164ebc9573ce1f55cd885c"
+}

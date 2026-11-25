@@ -8,17 +8,23 @@ from airbot_tt.config import ROOT
 from airbot_tt.pace_guidance import settings, apex_teacher
 
 
-def collect(device='cpu', split_only='all'):
+def collect(device='cpu', split_only='all', destination=None, serve_z_m=None):
     c = settings()
     distribution = json.loads((ROOT/'configs/strike.json').read_text())
+    if serve_z_m is not None:
+        if not np.isfinite(serve_z_m) or serve_z_m<=0:raise ValueError('Invalid serve height')
+        distribution['serve_position_m'][2]=float(serve_z_m)
     bed = BallTestbed(1/c['physics_hz'], device, static_paddle=False)
-    dest = ROOT/'.agents/runs/foundation/m6'
+    dest = Path(destination) if destination is not None else ROOT/'.agents/runs/foundation/m6'
     dest.mkdir(parents=True, exist_ok=True)
     reports = (json.loads((dest/'dataset.json').read_text())['splits']
                if split_only != 'all' else {})
+    offset=0
     for split, spec in c['splits'].items():
+        serve_offset=offset;offset+=spec['serves']
         if split_only != 'all' and split != split_only:
             continue
+        if (dest/f'{split}.npz').exists():raise FileExistsError('Preserve existing dataset; choose a new destination')
         rng = np.random.default_rng(spec['seed'])
         rows = []
         truths = []; failures = []
@@ -46,7 +52,7 @@ def collect(device='cpu', split_only='all'):
                 continue
             truths.append(apex.tolist())
             for measured, t, teacher in samples:
-                rows.append((measured, t, serve, teacher, apex, apex_time))
+                rows.append((measured, t, serve_offset+serve, teacher, apex, apex_time))
             if (serve+1)%32==0:
                 print(f'M6 PhysX {split}: {serve+1}/{spec["serves"]}', flush=True)
         path = dest/f'{split}.npz'
@@ -62,8 +68,8 @@ def collect(device='cpu', split_only='all'):
     hashes={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in
             [ROOT/'configs/pace.json',ROOT/'configs/ball.json',ROOT/'configs/strike.json',Path(__file__),
              ROOT/'src/airbot_tt/pace_guidance.py',ROOT/'src/airbot_tt/ball_scene.py']}
-    result=dict(status='PASS', splits=reports, source_sha256=hashes,
+    result=dict(status='PASS', splits=reports, source_sha256=hashes, distribution=distribution,
                 physics_hz=c['physics_hz'], policy_hz=c['physics_hz']/c['decimation'],
-                scope='M5 narrow synthetic clean distribution; independent PhysX flights without paddle')
+                scope=f'Clean synthetic Z={distribution["serve_position_m"][2]} m; serve-level split before windows; independent PhysX flights without paddle')
     (dest/'dataset.json').write_text(json.dumps(result,indent=2)+'\n')
     return result

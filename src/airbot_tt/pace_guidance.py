@@ -55,7 +55,8 @@ def return_teacher(state, *, config=None):
     landing = next((e for e in f['events'] if e['kind']=='landing'), None)
     if net is None or landing is None or landing['position_m'][0] <= 0:
         return {**invalid, 'reason': f['termination']}
-    return dict(valid=True, landing=landing['position_m'], net_z=net['position_m'][2], reason='valid')
+    return dict(valid=True, landing=landing['position_m'], net_z=net['position_m'][2],
+                landing_time_s=landing['time_s'], net_time_s=net['time_s'], reason='valid')
 
 
 def guidance_rewards(tcp, teacher, returned=None, *, dt=1/48, cfg=None):

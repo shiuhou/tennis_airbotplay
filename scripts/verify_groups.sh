@@ -6,8 +6,8 @@ root="$PWD"
 group="${1:-all}"
 case "$group" in
   all) groups=(research core pace camera);;
-  research|core|pace|camera) groups=("$group");;
-  *) echo 'Usage: bash scripts/verify_groups.sh [all|research|core|pace|camera]' >&2; exit 2;;
+  research|core|pace|frozen|mean|camera) groups=("$group");;
+  *) echo 'Usage: bash scripts/verify_groups.sh [all|research|core|pace|frozen|mean|camera]' >&2; exit 2;;
 esac
 image=sha256:9c5b00fb775c65913f78f22eadb56912853c1f9f1c38828e53fb99369e29c49e
 mkdir -p .agents/runs/foundation/verification/tmp

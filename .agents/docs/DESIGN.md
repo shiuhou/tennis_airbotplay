@@ -101,7 +101,7 @@ H0–H4先用相符版本的官方服務／SDK／範例，確認副作用後才�
 
 ## M6離線實作
 
-`pace_guidance.py`包裝既有DOP853作CPU參考教師，明確區分有效反彈後apex與無效狀態；`return_teacher`從離拍末態求落點／過網。`ReleaseLatch`接收合法拍面接觸、分離方向及TCP速度，只在首次有效離拍評分；M7才接實際RL事件。引導reward輸出raw／weighted／total，完整成功與正則尚未接訓練。
+`pace_guidance.py`包裝既有DOP853作CPU參考教師，明確區分有效反彈後apex與無效狀態；`return_teacher`從離拍末態求落點／過網。`ReleaseLatch`接收合法拍面接觸、分離方向及TCP速度，只在首次有效離拍評分；M7才接實際RL事件。引導reward輸出raw／weighted／total；M6階段只做離線驗證，M7的成功獎勵、正則及C接合見下文。
 
 `pace_predictor.py`校驗58份來源後直接import官方MLP，沒有複製trainer。資料五點／83.33ms、同serve及固定間隔；獨立RNG的Adam／MSE訓練與no-grad推論分離。`PredictionHook`每環境清history、在回傳前完成prediction；`actor_frame`建立23維或含預測的27維單幀，完整五幀actor／critic尚未建立。checkpoint保留來源與球參數hash，載回不能把未訓練模型誤作可用。
 
@@ -129,6 +129,103 @@ H0–H4先用相符版本的官方服務／SDK／範例，確認副作用後才�
 
 `_Hull.overlaps` 以原半空間與 clearance/2 膨脹，最大化共同平面餘量ρ（`A x + ρ ≤ b`）。最優ρ≥−1e-7m保守判作碰撞；非最優／非有限結果拋錯。使用SciPy官方HiGHS，無失敗放行或重試分支。一般1mm、工具手腕0.5mm裕度不變；ρ不是歐氏距離。此形式取代零目標可行性LP，以避免已重現的分離密集凸包Unknown；數值／完整M3驗證見M7筆記第13節。
 
-M7短對照允許透過命令列覆寫發球Y半範圍，記入有效設定與checkpoint，只改PaceEnv記憶體副本，不改M5檔案。訓練可選A或B子集；比較範圍時固定A。最終評測按同一seed重設各模型及zero，記錄合法落點XY，故障不剔除；效用門檻以SPEC為準。
+M7短對照允許透過命令列覆寫發球Y半範圍，記入有效設定與checkpoint，只改PaceEnv記憶體副本，不改M5檔案。訓練可選A／B／C／D子集；比較範圍時固定A。最終評測按同一seed重設各模型及zero，記錄合法落點XY，故障不剔除；效用門檻以SPEC為準。
 
 M7.4的發球中心高度覆寫由`--pace-serve-z`進入有效cfg及checkpoint，PaceEnv只改記憶體內的serve_position_m[2]，重新評測讀回原值。這是版本化任務輸入，不改M5設定、控制包絡或教師定義。動態可達性見證利用既有球預測／IK／Trajectory，再走正常關節動作介面；只供開發驗證，不是Actor的一部分或新的引導點。
+
+## C一次性離拍評分
+
+`TensorReleaseLatch`在物理子步追蹤有效接觸→解除接觸且相對分離，依env發出一次release脈衝；非法、50ms等待超時為終止狀態，partial reset只清指定env。C在脈衝時呼叫既有CPU `return_teacher`，保留原落點／網高函式與事件權重；CPU求解只在離拍發生時運行，不把它冒稱為批量GPU教師。
+
+`episode_return`保存單次引導總額，策略步只領取該步前後差，避免跨20個子步或後續幀重複發分。記錄離拍狀態、時刻、預測、分項及invalid原因；return teacher新增預測事件相對時間供PhysX比對。A/B分支不運行此教師，觀測及動作不變。後續接觸可改變實際結果，因此預測分數不是合法回球保證；本實作不在未來非法事件後回溯改寫已發放的分數。
+
+
+D復用同一環境分支：B/D領取本策略區間的hit累積差，C/D領取return累積差。沒有另建reward管理層或改公式；release與reset完全共用。`pace-check combined`在固定C重播證據上驗證相同出球／episode、總分加法、return不變及reset隔離。D訓練要求當前combined關卡，C單獨訓練仍要求return關卡。
+
+
+## E-online位置歷史提示與獨立在線MSE
+
+`OnlinePredictor`復用官方MLP與既有`Predictor`，保存128個策略時刻的有效五點窗口；每個rollout後獨立Adam/MSE一個epoch、batch1024，只有前20次更新資格，空資料記跳過。初始化未訓練時提示為0／invalid，離線驗證模型不載入主線。模型／optimizer／局部RNG／更新計數及近期buffer進checkpoint；環境恢復時清觀測歷史。
+
+E只在原23維actor單幀後加3D prediction與valid，形成27×5=135；critic維持40×5=200，教師及D獎勵不變。predictor輸入來自同一環境局部球位置，教師只用於MSE標籤／診斷，不能進actor。策略步以整數索引產生採樣時間，避免960Hz浮點累加破壞48Hz等間隔窗口。reset只更新指定env；正常步先predict再組obs，MSE更新後只重算最新一幀提示，不重複推入同一筆歷史。
+
+五點predictor看83.3ms，actor五幀各帶當時prediction，使最遠資料延伸至166.7ms；D的直接五位置歷史只有83.3ms。D/E比較的是整個模組與時間資訊的增加，不能據此分離物理特徵和長歷史壓縮的貢獻。E自身initial actor另存，不假定115維D與135維E同seed初始化相同。
+
+runner逐更新記錄hint真正使用步數、教師有效期間內的提示誤差、hit引導步數／總分、離拍／有效預測／非零return事件及分數；逐episode記首次prediction與首次使用時刻、擊球前提示步數、history不足／untrained／invalid。valid只代表可計算且至少更新過，不等於在線模型精度已達離線門檻。PPO更新前後核對predictor權重／梯度，MSE前後核對policy權重，並記實際MSE epoch和optimizer步數。
+
+`pace-check predictor-curve`在E環境生成及更新提示，但將actor五幀各裁回原23維交給固定D權重；D不受prediction改變影響，隔離PPO與提示造成的行為變化。每條流重建未訓練predictor及相同發球RNG；每24步只呼叫原online.update一次，以固定validation量測誤差，不使用test或修改模型。這不是E聯合學習效果驗證。
+
+`pace-check predictor-batch`復用學習曲線診斷，在同一環境資料流旁建立batch32的獨立OnlinePredictor。每輪將原buffer條目同步給它，模型／optimizer獨立；初始化權重及每輪shuffle RNG一致性均斷言，資料窗口SHA入報告。固定D不讀任何提示，batch32不影響環境。batch只在診斷實例配置改動，configs/pace_online.json維持1024；不引入第二套訓練器或改正式E設定。
+
+
+`tests/pace_predictor_audit.py`提供封存推論與真資料契約診斷。交叉評測直接載入原Predictor與checkpoint的buffer，對教師／PhysX分開計分；按階段以已保存速度／事件標記分組，不從無metadata的舊buffer猜env。短重播僅在診斷內包裝observe／collect，同步保存真正被收集的env／serve／時刻／origin／狀態／phase，逐值對上原buffer；生產checkpoint結構與資料流不變。
+
+E-online的固定reset教師與離線逐狀態重算教師是兩種已記錄語義。診斷保留重算失敗原因及原窗口，不以篩掉不一致資料改善模型分數。研究將在線取得準確提示與提示對策略的價值拆開；E-frozen採以下獨立模式，不取代E-online。
+
+### E-frozen的模式與資料所有權
+
+D不建立提示欄位；E-online與舊名稱E沿用獨立MSE；E-frozen經顯式配置載入原離線MLP，只做推論。三者共用原D教師／reward、48Hz六關節action、960Hz物理及200維critic。E-frozen的135維actor與E-online相同：五個27維frame各由原23維加prediction XYZ／valid組成；它不要求離線動作示範，也不把M5規劃器接入Actor。
+
+凍結配置綁定模型SHA、訓練receipt、資料manifest、官方來源與球參數。載入先驗證此鏈，再取得權重；訓練receipt中的20epochs／3060 optimizer步屬既有預訓練，不能算成此次在線更新。執行時沒有predictor optimizer或近期MSE buffer，PPO只持有actor／critic參數；模型`eval`、無梯度推論及參數凍結各有不同作用，須合併驗證，不能僅靠eval宣稱不會更新。
+
+`FrozenPredictor`復用`Predictor(inference_only=True)`與`PredictionHook`；前者不建立Adam或shuffle RNG，後者仍管理每env窗口。歷史receipt來源對照準備時的`source_snapshot.json`，當前物理／教師／官方來源另行核對；不因新增接口修改了推論檔案，就重寫歷史hash。`PaceEnv.predictor_module`共用frame路徑，runner的`set_predictor()`及`update_ppo()`明確分流；凍結checkpoint保留歷史更新計數，但不攜帶可續訓optimizer／RNG。
+
+凍結模型在CPU建構，僅於保存／恢復CPU RNG的區間設定CPU default generator，避免`torch.manual_seed()`連帶改CUDA抽樣流；舊在線初始化語義保留。history入口同時檢查位置與時間有限，NaN時間不能被一般間隔比較放行。initial評測結束恢復抽樣RNG並重新設定正式serve序列，避免工程量測消耗之後的訓練資料。
+
+當步球位置先減去env origin，依原時序進入獨立的五點history，再由同一凍結MLP算提示，最後組裝actor frame。窗口不足、reset、缺樣或非有限觀測沿原hook契約清理，其他env歷史不受影響。可用性只取決於可觀測history與可用模型；教師／事件遮罩用於擊球前診斷，不得反向控制Actor的valid位元。較舊的actor frame保留當時提示；凍結模式沒有MSE後回填需求。
+
+策略checkpoint保存模式、凍結來源及權重，載回須恢復同一135維觀測契約及推論內容，不能從檔名猜測模式。環境history在新回合重新建立；此checkpoint保證模型重載與評測契約，不宣稱保存PhysX狀態後能逐步續跑。runner在首次PPO前保存自身initial，後續以權重與梯度檢查保證predictor沒有進PPO更新路徑。
+
+配對研究的共同題目、樣本預算及判讀邊界由[SPEC](SPEC.md#e-frozen固定離線提示的獨立比較)定義。新protocol需記當前source與固定D模型雜湊；原D的環境來源已早於E與其他接口改動，故當前重評是一項相容性檢查，不能只搬移舊PASS報告。實作資料流、來源鏈、歷史成本及未執行關卡詳見[E筆記第10節](../../doc/notes/m7_predictor.md#10-e-frozen固定準確提示再問策略能否使用)。
+
+### E-mean同維度常數與初始化配對
+
+`FixedMeanPredictor`讀取`configs/pace_mean.json`，核對train檔、資料manifest、原cross報告的train平均點、凍結基準設定及新工作區source snapshot。常數以float32保存於`_MeanModel`的buffer，沒有可優化parameter；`_MeanPredictor`不建立MLP、optimizer或RNG，`fit_epoch()`拒絕呼叫。資料配方為每條train serve的有效五點窗口教師label先平均，再跨serve平均，避免窗口較多的serve取得較大權重。建構器只校驗既有常數／來源，不開raw validation或held-out選點。
+
+mean沿用`PredictionHook`，由實際可觀測位置／時間維護同serve五點history；完整有效窗口才讓常數XYZ與valid=1進入原27維frame。這保留learned的暖機、缺樣、reset與五幀135維結構，差異發生在完整窗口後的XYZ內容。`PaceEnv.predictor_mode`區分mean／frozen／online；mean走不可更新提示介面，不走MSE收集或更新，critic及D reward仍共用。constant buffer、來源及模式共同進checkpoint，載回清history並拒絕其他模式或常數篡改。
+
+`pair_mean_initialization()`在runner正常建構一次ActorCritic後，先核對所有policy state張量與固定learned initial逐值相同，再載入同一權重，不新增第二個網路而改變RNG。CPU建構後狀態SHA由同官方建構流程獨立重建並事前固定；當前CPU／CUDA在載入與initial評測前後保存／核對，正式rollout前狀態寫入新initial checkpoint。舊learned initial沒有保存當時CUDA RNG，這個缺口保留為證據限制；不能因當前流程可重建就改寫舊receipt。
+
+`configs/pace_mean_experiment.json`固定既有learned initial／final、舊報告及共同設定。`mean-compat`使用當前程式無更新重播224個主要回合建立相容證據，正式`mean-eval`再共同評416個主要回合；兩者保留原zero→D7101→learned initial／final7101→D7102→…順序，D三seed合計96個上下文回合另列，實際分別320／512回合。這是首次10.252μm落點超限及兩次獨立順序診斷後、PPO前修正的評測契約：恢復歷史順序、不放寬原10μm門檻；只量到順序敏感，尚未證明物理機制。兩個入口共用評測與舊結果比對，既有模型／報告不寫入。新mean訓練只接受當前來源mean／compat與原控制關卡，正式短跑再要求mean smoke。研究可比較動態提示與常數提示在同維度／初值下的效用，但較長位置歷史的壓縮也隨動態提示一起被移除，並非只改單一「準確度」數字。解釋與資料流見[E筆記第11節](../../doc/notes/m7_predictor.md#11-e-mean讓動態提示與固定平均點使用同一初值)。
+
+主線回寫的相容驗證由`tests/pace_integration.py`獨立記錄歷史到當前來源映射，核對固定模型／receipt及來源重建，再以既有bank與probe資料流重播。原BC／recovery／refinement的來源validator保持嚴格，舊receipt不改寫為當前hash；整合驗證不替換生產載入契約。最早runner未完整重建時，明確區分官方constructor／seed的全初始張量核證與歷史runner重跑。當前執行結果見[E筆記§12](../../doc/notes/m7_predictor.md#12-主工作區選擇性回寫與整合驗證)。
+
+
+`tests/pace_motion.py`分獨立程序復用SingleShot原M5 prepared script與PaceEnv原zero/PPO。診斷在每個物理步旁讀取實際球／TCP／連桿狀態，接觸上升沿保存前後樣本，解除接觸與post-hit桌接觸另存；120Hz trace供繪圖。`scripts/plot_motion_comparison.py`純讀報告，重繪側視／俯視與同步3D簡圖／碰拍區放大，不參與控制或碰撞。未取得solver接觸點，因此表面點速度只是明標的幾何估計，主要比較取可靠的TCP剛體速度。
+
+
+DeepMind audit是獨立資料診斷，不改訓練env。`configs/deepmind_sources.json`固定官方來源／SHA／Git blob，`prepare_deepmind.py`只下載驗證原檔；`configs/deepmind_audit.json`定本輪低旋與搜尋條件。`tests/deepmind_audit.py`做座標／分布、重用predict_ball的零旋預測、原Trajectory／PositionCommand預檢、原M5有限規劃、PaceEnv獨立重播及固定action交叉矩陣。原始資料、衍生資料與來源分開，完整證據留本地deepmind_audit，summary.json統整分母。
+
+合法回球候選與contact診斷分開導出，保留raw omega／ID／split／來源與零旋近似，沒有production consumer。未取得合法回球時audited_candidates為空且NOT_READY；不得將資料契約相容或有效碰拍冒稱可訓練回球分布。
+
+
+`deepmind_audit.py --stage return-witness`是獨立的有限回球見證搜尋：從既有train接觸案例預先選前三筆，沿原飛行／碰撞公式，只將完整姿態IK改為接觸球心位置＋拍面法向約束，允許面內轉角自由。保留原M5與production控制；候選合格仍需完整命令及PhysX驗證，不能將局部IK失敗當不可達證明。各輪協議與結果獨立保存，不覆寫歷史audit summary。
+
+
+安裝工作空間診斷`tests/racket_workspace.py`重用原FK及CollisionChecker，固定Sobol採樣目前／完整關節box，完整集合額外包含目前清晰姿態，避免獨立稀疏採樣造成假缺失。正拍面CAD裁切到既有blade分界，法向外移球半徑形成潛在球心集合；只做靜態手臂碰撞及球對桌／網／地面檢查，未驗球對手臂遮擋、路徑連通或限時動態。NPZ保存q／R／TCP／normal及20mm voxel實際代表的姿態和面點索引；不能將occupancy變成整格可達。底座XYZ覆寫僅供另存幾何比較，不改正式安裝或控制配置；支撐與旋轉安裝須另建模。
+
+
+`deepmind_audit.py --stage return-radius`重用return_witness_search，僅在記憶體覆寫診斷rl的action_scale，分別保存.6／1.0結果與hash。重跑.6對舊結果驗理由／誤差，兩組逐候選核對相同球態、目標、時間及法向；保留IK的q與active-bound joints，區分action box與URDF邊界。未改生產配置；局部邊界解是診斷線索，不是全域不可達證明。
+
+
+固定五球探索以`pace_serves.FixedServeBank`核對官方原檔／raw-ID train split與轉換，保留raw omega但simulated omega=0。`PaceEnv`可選bank，每環境獨立五球洗牌循環，自動reset不回退人工分布，指定bank_indices評測不消耗循環；episode在reset前保存raw_id/initial_state。bank與人工覆寫互斥，無bank維持原RNG行為。runner固定A/16env/3seed/6144，保存initial及manifest，評測後恢復Torch RNG和訓練序列；訓練每步先按當前ID計數，sequence在最終評測前存檔。原terminal與PPO更新不改。
+
+`pace_bank.evaluate_bank`用首5環境評canonical五球，等待全部首回合完成、排除padding／後續reset，必要時旁讀960Hz接觸量測，逐env首次終止即凍結。局部點速仍為幾何投影估計；實測碰拍後落桌與legal outcome分開。runner對initial/final/重載評估，測試資料與checkpoint契約不符即拒絕；通用pace-eval亦支援顯式同manifest，無隱式換資料。測量helper hash與bank gate hash保存。
+
+
+### 接觸示範初始化
+
+`pace-bc`在原固定五球環境重播腳本，於動作前複製Actor115觀測／請求action，以serve_id排除各環境第一次reset後的資料。離線MSE先按軌跡內步與joint平均，再對五軌跡等權；直接訓練固定PACE的actor子網，不採上游依賴StudentTeacher的Distillation介面。BC後的完整閉環重播及帶噪聲試驗均由Actor輸出，不混入腳本。
+
+`--pace-actor-init`只接受已驗證三seed的五球A研究產物。與同seed原initial逐值核對後只載actor，cfg保留原控制／PPO契約，示範來源／BC配方另存provenance。PPO建構前恢復原model-construction後Torch RNG、重設bank序列與serve計數，建立新optimizer；Critic和std初值不變。噪聲診斷使用每球／seed／重複獨立的局部亂數流，使原始與BC Actor共用標準常態抽樣而不污染PPO。
+
+`tests/pace_bc_rollout.py --feedback-audit`在評估邊界複製115維Actor觀測，從同tick已保存示範替換每幀的qd[6:12]及／或前action[12:18]。實測q／qd、真正previous_action、actor_history與PositionCommand記憶均不改；每次推論前後逐值核對。示範自身含一拍延遲和初始歷史填充，以首serve_id隔離reset；示範耗盡恢復真實觀測，缺失參考明標。原始／介入／參考完整觀測、真實q／qd、action與控制記憶另存本地，早期偏差從真實狀態計算；混合觀測只用於機制診斷，不進訓練或部署路徑。
+
+五球修正示範分兩次啟動。三組固定時刻下，`tests/pace_recovery.py` 對既有 `evaluate_bank` 提供按 tick 切換動作來源的 policy，首 episode 的當步觀測配實際請求，依原事件及物理碰拍時刻決定訓練區間。前綴可對既有自主量測逐步核對。通過覆蓋門檻後，`scripts/contact_recovery_bc.py` 以球、來源、軌跡、步四層平均原六關節 MSE，只更新 Actor 並獨立重載閉環驗證。新權重與舊研究證據分目錄、用獨立 schema；保留既有 PPO 初始化驗證。研究入口先啟動 Isaac，再匯入隨 Kit 提供的 PyTorch。
+
+`tests/pace_recovery_probe.py`以凍結的新Actor作兩個單球回合，重用既有接管記錄器及物理事件擷取，只計16環境中的env0首episode。原`step(auto_reset=False)`後量測正常運動state write為零；其他已終止padding可單獨reset，env0終局即停止。保存逐tick真實q／qd／previous_action／Actor請求／腳本請求及控制記憶，與三條舊成功後綴逐樣本核對，再分單位、限共同碰拍前比對。既有hash鎖定的採集與訓練來源不改；獨立protocol連到原fit及collection證據。繪圖由既有`plot_recovery_bc.py --probe`只讀產生。
+
+
+四案接管擴充沿用原probe與記錄器，保留球在共同評測中的環境索引；只計指定env首episode，其餘padding排除。成功後綴以採集Actor SHA／raw ID／切點識別，避免同時刻的不同實際狀態被錯當重複。`tests/pace_bc_refine.py`直接重用原資料加權、PACE ActorCritic、完整五球評測及配對噪聲；792筆資料另存固定來源及逐軌跡質量。候選1的固定Adam與候選2的官方CosineAnnealingLR僅在此研究入口選擇，未改生產PPO預設。兩配方保留以重現受控比較，不繼續新增未驗變體。
+
+`airbot-contact-refinement-v1`明確描述變更後的擬合配方。初始化驗證重算三seed的五球及重載結果、核對最後update數、資料／protocol／權重／原initial及目前來源SHA；原BC v1繼續保留原配方與來源限制。通過後仍由原`--pace-actor-init`只載Actor，PPO使用fresh optimizer。歷史證據的逆差異只用於重建精確舊來源，不把歷史PASS改認為新來源PASS。詳細資料流、限制與命令見[自主修正BC筆記](../../doc/notes/deepmind_ppo.md#自主修正bc最多三個候選)。

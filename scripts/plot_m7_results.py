@@ -134,6 +134,143 @@ def guidance_comparison(root, output):
     output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
 
 
+def return_comparison(root, output, combined=False):
+    import matplotlib.pyplot as plt
+    folder=root/('m74d' if combined else 'm74c')
+    report=json.loads((folder/'final_summary.json').read_text())
+    gate=json.loads((folder/('combined_gate.json' if combined else 'return_gate.json')).read_text())
+    if report['status']!='PASS' or gate['status']!='PASS':raise ValueError('Incomplete C comparison')
+    fig,axes=plt.subplots(1,3,figsize=(13,4),layout='constrained')
+    colors={'initial':'#777777','A':'#287d9b','B':'#bb493a','C':'#48986a'}
+    if combined:colors['D']='#9467bd'
+    for ax,metric,title in zip(axes[:2],['hit_rate','legal_return_rate'],['Effective paddle contact','Legal return']):
+        for index,group in enumerate(colors):
+            rows=[r for r in report['runs'] if r['group']==group]
+            for offset,row in enumerate(rows):
+                value=row['evaluations']['active'][metric]*100
+                x=index+(offset-1)*.15
+                ax.scatter(x,value,color=colors[group],s=40)
+                ax.annotate(str(row['seed'])[-1],(x,value),xytext=(0,6),textcoords='offset points',fontsize=8,ha='center')
+        ax.axhline(report['baseline']['active'][metric]*100,color='black',ls='--',label='Zero action')
+        ax.set(xticks=range(len(colors)),xticklabels=['Initial','A','B: hit','C: return']+(['D: both'] if combined else []),ylim=(-5,115),ylabel='Same 32 active serves (%)',title=title)
+        ax.legend(fontsize=8);ax.grid(axis='y',alpha=.2)
+    values=[gate['p95']['landing_m']*1000,gate['p95']['net_height_m']*1000]
+    axes[2].bar(['Landing','Net height'],values,color='#287d9b')
+    axes[2].axhline(20,color='black',ls='--',label='20 mm gate')
+    for i,v in enumerate(values):axes[2].text(i,v+.4,f'{v:.2f}',ha='center')
+    axes[2].set(ylabel='P95 error (mm)',ylim=(0,24),title='Pre-training free-flight validation')
+    axes[2].legend(fontsize=8)
+    fig.suptitle(('D combined guidance' if combined else 'C return guidance')+' | 6,144 transitions / seed | Labels 1/2/3 = seeds 7101/7102/7103')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def predictor_interface(root,output):
+    import matplotlib.pyplot as plt
+    folder=root/'m74e'
+    offline=json.loads((folder/'offline/validation.json').read_text())
+    smoke=json.loads((folder/'smoke.json').read_text())
+    if offline['status']!='PASS' or smoke['status']!='PASS':raise ValueError('Incomplete E interface validation')
+    history=smoke['runs'][0]['history']
+    fig,axes=plt.subplots(1,3,figsize=(13,4),layout='constrained')
+    keys=['learned_common','training_mean_common','estimated_physics','constant_velocity']
+    values=[offline[k]['rmse_m']*1000 for k in keys]
+    axes[0].bar(['MLP','Train mean','Physics','CV'],values,color=['#9467bd','#888888','#287d9b','#bb493a'])
+    axes[0].set_yscale('log');axes[0].axhline(30,color='black',ls='--',label='30 mm gate')
+    for i,v in enumerate(values):axes[0].text(i,v*1.12,f'{v:.1f}',ha='center',fontsize=8)
+    axes[0].set(title='Offline test: common valid windows',ylabel='3D RMSE (mm, log scale)');axes[0].legend(fontsize=8)
+    x=[r['iteration'] for r in history]
+    coverage=[r['guidance_coverage'] for r in history]
+    axes[1].bar(x,[100*r['hint_used_steps']/max(1,r['prehit_steps']) for r in coverage],color='#9467bd')
+    axes[1].set(title='Online from scratch: actual hint use',xlabel='PPO update',ylabel='Pre-hit actions with valid hint (%)',ylim=(0,105),xticks=x)
+    axes[2].plot(x,[r['release_events'] for r in coverage],'o-',label='Release events')
+    axes[2].plot(x,[r['return_valid_events'] for r in coverage],'o-',label='Valid return forecasts')
+    axes[2].set(title='Training return-guidance coverage',xlabel='PPO update',ylabel='Events in rollout',xticks=x);axes[2].legend(fontsize=8)
+    fig.suptitle('E data + interface validation | offline model is NOT loaded into online smoke')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def predictor_curve(root,output):
+    import matplotlib.pyplot as plt
+    report=json.loads((root/'m74e/learning_curve.json').read_text())
+    if report['status']!='PASS':raise ValueError('Incomplete predictor curve diagnosis')
+    fig,axes=plt.subplots(1,3,figsize=(13,4),layout='constrained')
+    for run in report['runs']:
+        h=run['history'];x=[r['iteration'] for r in h];label=f"D behavior {run['behavior_seed']}"
+        axes[0].plot(x,[r['validation_rmse_m'] for r in h],label=label)
+        axes[1].plot(x,[r['update']['optimizer_steps'] for r in h],label=label)
+        axes[2].plot(x,[100*r['coverage']['hint_steps']/max(1,r['coverage']['prehit_steps']) for r in h],label=label)
+    axes[0].axhline(.03,color='black',ls='--',label='30 mm reference')
+    axes[0].axhline(report['train_mean_validation_rmse_m'],color='gray',ls=':',label='Training mean apex')
+    axes[0].set(yscale='log',title='Fixed validation accuracy',ylabel='3D RMSE (m, log scale)')
+    axes[0].legend(fontsize=7)
+    axes[1].set(title='Actual optimization work',ylabel='Cumulative optimizer steps')
+    axes[2].set(title='Hints available before hit',ylabel='Pre-hit steps (%)',ylim=(0,105))
+    for ax in axes:ax.set(xlabel='MSE update opportunity',xticks=[1,5,10,15,20]);ax.grid(alpha=.15)
+    fig.suptitle('20-update predictor diagnosis | frozen D does NOT consume hints | no PPO updates')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def predictor_batch(root,output):
+    import matplotlib.pyplot as plt
+    report=json.loads((root/'m74e/batch_comparison.json').read_text())
+    if report['status']!='PASS' or report['process_exit_code']!=0:
+        raise ValueError('Incomplete batch comparison')
+    fig,axes=plt.subplots(1,3,figsize=(13,4),layout='constrained')
+    for ax,run in zip(axes,report['runs']):
+        h=run['history'];x=[r['iteration'] for r in h]
+        for batch,color in [(1024,'#bd5c43'),(32,'#257b9e')]:
+            rows=h if batch==1024 else [r['batch32'] for r in h]
+            ax.plot(x,[r['validation_rmse_m']*1000 for r in rows],color=color,
+                    label=f"Batch {batch}: {rows[-1]['update']['optimizer_steps']} optimizer steps")
+        ax.axhline(30,color='black',ls='--',label='30 mm reference')
+        ax.axhline(report['train_mean_validation_rmse_m']*1000,color='gray',ls=':',label='Training mean apex')
+        ax.set(title=f"Fixed D behavior {run['behavior_seed']}",yscale='log',
+               xlabel='MSE update opportunity',ylabel='Validation 3D RMSE (mm)',xticks=[1,5,10,15,20])
+        ax.grid(alpha=.15);ax.legend(fontsize=7)
+    fig.suptitle('Same data + initialization + 20 opportunities | batch size only | unequal compute | no PPO')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
+def predictor_audit(root,output):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from airbot_tt.pace_predictor import windows
+    import torch
+    base=root/'m74e';r=json.loads((base/'data_audit/cross.json').read_text())
+    fig,axes=plt.subplots(2,2,figsize=(12,8),layout='constrained')
+    seeds=[7101,7102,7103];colors=['#555555','#b75c48','#247ba0','#a88d39']
+    for panel,dataset in enumerate(['buffer','validation']):
+        ax=axes.flat[panel];xx=np.arange(3)
+        for j,label in enumerate(['offline','batch1024','batch32','mean']):
+            values=[]
+            for seed in seeds:
+                name=label if label in ('offline','mean') else f'online_{seed}_b{1024 if label=="batch1024" else 32}'
+                row=next(z for z in r['cross'] if z['model']==name and z['dataset']==(f'buffer_{seed}' if dataset=='buffer' else 'validation'))
+                values.append(row['teacher']['rmse_m']*1000)
+            ax.bar(xx+(j-1.5)*.2,values,width=.19,color=colors[j],label=label)
+        ax.axhline(30,color='black',ls='--',lw=1);ax.set(yscale='log',xticks=xx,xticklabels=seeds,
+          ylabel='3D RMSE to teacher (mm)',xlabel='Frozen D behavior',title='Archived own buffer' if panel==0 else 'Fixed validation (1,223 windows)')
+        ax.legend(fontsize=8,ncol=2);ax.grid(axis='y',alpha=.15)
+    ax=axes[1,0];phases=['pre_bounce','across_bounce','post_bounce'];xx=np.arange(3)
+    for j,seed in enumerate(seeds):
+        values=[r['validation_by_phase'][f'online_{seed}_b32'][p]['teacher']['rmse_m']*1000 for p in phases]
+        ax.bar(xx+(j-1)*.23,values,width=.22,label=f'Batch32 / D {seed}')
+    ax.plot(xx,[r['validation_by_phase']['offline'][p]['teacher']['rmse_m']*1000 for p in phases],'ko--',label='Offline model')
+    ax.axhline(30,color='black',ls=':',lw=1);ax.set(yscale='log',xticks=xx,xticklabels=['Before bounce','Across bounce','After bounce'],
+      ylabel='3D RMSE to teacher (mm)',title='Validation error concentrates after bounce');ax.legend(fontsize=8);ax.grid(axis='y',alpha=.15)
+    ax=axes[1,1];d=dict(np.load(base/'data/validation.npz'))
+    vx,_,ends=windows(d['state'][:,:3],d['time'],d['serve'],np.ones(len(d['time']),bool),d['target'],d['valid'])
+    v=vx.reshape(-1,5,3)[:,-1]
+    state=torch.load(base/'batch_comparison/predictor_batch32_D_7102.pt',map_location='cpu',weights_only=True)
+    b=torch.cat([a for a,y in state['buffer']]).numpy().reshape(-1,5,3)[:,-1]
+    ax.scatter(v[:,0],v[:,2],s=8,alpha=.25,color='#ca8f35',label='Validation endpoints')
+    ax.scatter(b[:,0],b[:,2],s=5,alpha=.25,color='#247ba0',label='D7102 archived buffer endpoints')
+    ax.axvline(b[:,0].min(),ls='--',color='#247ba0',lw=1,label='Buffer minimum X')
+    ax.set(xlabel='Local X (m)',ylabel='Local Z, ground origin (m)',title='Online buffer ends before the later flight');ax.legend(fontsize=8);ax.grid(alpha=.15)
+    fig.suptitle('Archived inference audit | teacher error throughout | no new training or heldout access')
+    output.parent.mkdir(parents=True,exist_ok=True);fig.savefig(output,dpi=140);plt.close(fig)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runs',type=Path,default=Path('.agents/runs/foundation/m7'))
@@ -142,11 +279,35 @@ def main():
     parser.add_argument('--net-diagnostic',action='store_true',help='Plot measured release-to-net replay')
     parser.add_argument('--serve-comparison',action='store_true',help='Plot frozen serve-width comparison and legal landings')
     parser.add_argument('--guidance-comparison',action='store_true',help='Plot M7.4 A/B and separate feasibility witnesses')
+    parser.add_argument('--return-comparison',action='store_true',help='Plot C comparison and physical return-prediction validation')
+    parser.add_argument('--combined-comparison',action='store_true',help='Plot D combined-guidance comparison')
+    parser.add_argument('--predictor-interface',action='store_true',help='Plot new-distribution E data and online coverage')
+    parser.add_argument('--predictor-curve',action='store_true',help='Plot bounded 20-update predictor diagnosis')
+    parser.add_argument('--predictor-batch',action='store_true',help='Plot paired batch 1024 versus 32 diagnosis')
+    parser.add_argument('--predictor-audit',action='store_true',help='Plot archived predictor data/fit diagnosis')
     args=parser.parse_args()
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     root=args.runs
+    if args.predictor_audit:
+        predictor_audit(root,args.output)
+        return
+    if args.predictor_batch:
+        predictor_batch(root,args.output)
+        return
+    if args.predictor_curve:
+        predictor_curve(root,args.output)
+        return
+    if args.predictor_interface:
+        predictor_interface(root,args.output)
+        return
+    if args.combined_comparison:
+        return_comparison(root,args.output,combined=True)
+        return
+    if args.return_comparison:
+        return_comparison(root,args.output)
+        return
     if args.guidance_comparison:
         guidance_comparison(root,args.output)
         return

@@ -14,6 +14,7 @@ from airbot_tt.pace_predictor import Predictor, PredictionHook, windows
 
 
 def metric(prediction, truth):
+    if len(truth)==0:return dict(n=0,rmse_m=None,xyz_rmse_m=None,p95_m=None)
     error = np.asarray(prediction)-truth
     distance = np.linalg.norm(error,axis=1)
     return dict(n=len(error), rmse_m=float(np.sqrt(np.mean(distance**2))),
@@ -48,6 +49,10 @@ def main():
         assert all(row['collection_config'][k]==c[k] for k in ('schema','physics_hz','decimation','history'))
     for name, sha in collection['source_sha256'].items():
         assert hashlib.sha256((ROOT/name).read_bytes()).hexdigest()==sha, f'Stale dataset: {name}'
+    serve_sets=[set(np.load(dest/f'{split}.npz')['serve'].tolist()) for split in c['splits']]
+    # Historical M6 uses split-local IDs; new collections use global serve IDs.
+    if 'distribution' in collection:
+        assert all(not a.intersection(b) for i,a in enumerate(serve_sets) for b in serve_sets[i+1:])
     train,x,y,ends=dataset('train',dest)
     val,vx,vy,ve=dataset('validation',dest)
     predictor=Predictor()
@@ -99,6 +104,7 @@ def main():
             constant.append(history[-1]+v*forecast['time_s'])
     common=np.array(common,dtype=int)
     truth=held['truth'][he]
+    train_mean=np.mean([y[train['serve'][ends]==s].mean(0) for s in np.unique(train['serve'][ends])],axis=0)
     report=dict(scope=collection['scope'], config=c, checkpoint_epoch=predictor.updates,
                 training_seconds=receipt['training_seconds'], learning_curve=curve,
                 collection=collection, checkpoint_sha256=hashlib.sha256((output/'predictor.pt').read_bytes()).hexdigest(),
@@ -106,7 +112,8 @@ def main():
                              rejected_heldout_samples=len(held['time'])-len(hx)),
                 learned_all=metric(learned,truth), learned_common=metric(learned[common],truth[common]),
                 constant_velocity=metric(constant,truth[common]), estimated_physics=metric(estimated,truth[common]),
-                teacher=metric(hy,truth), training_mean=metric(np.tile(y.mean(0),(len(truth),1)),truth),
+                training_mean_common=metric(np.tile(train_mean,(len(common),1)),truth[common]),
+                teacher=metric(hy,truth), training_mean=metric(np.tile(train_mean,(len(truth),1)),truth),
                 coverage_common=float(len(common)/len(hx)),
                 per_serve_rmse_m={str(int(s)):metric(learned[held['serve'][he]==s],truth[held['serve'][he]==s])['rmse_m']
                                   for s in np.unique(held['serve'][he])})
@@ -126,10 +133,25 @@ def main():
     phases=np.where(cross_bounce,'across_bounce',np.where(held['state'][he,5]>0,'post_bounce','pre_bounce'))
     report['by_phase']={}
     for phase in np.unique(phases):
+        all_mask=phases==phase
         mask=phases[common]==phase
-        report['by_phase'][phase]=dict(learned=metric(learned[common][mask],truth[common][mask]),
+        report['by_phase'][phase]=dict(all_windows=int(all_mask.sum()),common_windows=int(mask.sum()),
+                                      coverage_common=float(mask.sum()/all_mask.sum()),
+                                      learned_all=metric(learned[all_mask],truth[all_mask]),
+                                      training_mean=metric(np.tile(train_mean,(int(all_mask.sum()),1)),truth[all_mask]),learned=metric(learned[common][mask],truth[common][mask]),
                                       estimated_physics=metric(np.array(estimated)[mask],truth[common][mask]),
                                       constant_velocity=metric(np.array(constant)[mask],truth[common][mask]))
+    raw_phase=[]
+    for end in range(len(held['time'])):
+        start=end
+        while start>max(0,end-4) and held['serve'][start-1]==held['serve'][end]:start-=1
+        vz=held['state'][start:end+1,5]
+        cross=bool(np.any((vz[:-1]<0)&(vz[1:]>0)))
+        raw_phase.append('across_bounce' if cross else ('post_bounce' if held['state'][end,5]>0 else 'pre_bounce'))
+    for phase,row in report['by_phase'].items():
+        row['raw_samples']=raw_phase.count(phase)
+        row['window_coverage']=row['all_windows']/row['raw_samples']
+    report['window_coverage']=dict(raw_samples=len(held['time']),teacher_valid_samples=int(held['valid'].sum()),eligible_windows=len(hx),fraction=float(len(hx)/len(held['time'])),warmup_or_invalid=len(held['time'])-len(hx))
     valid=held['valid']
     teacher_error=np.linalg.norm(held['target'][valid]-held['truth'][valid],axis=1)
     teacher_time_error=abs(held['teacher_time'][valid]-held['truth_time'][valid])

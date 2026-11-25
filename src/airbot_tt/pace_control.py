@@ -106,3 +106,33 @@ class TensorShotEvents:
 def bootstrap_timeout(reward,terminal_value,truncated,gamma):
     """Bootstrap from reset-before state exactly once; real termination adds zero."""
     return reward+gamma*terminal_value.flatten()*truncated
+
+
+class TensorReleaseLatch:
+    """One physical release pulse per serve, before CPU return prediction.
+
+    Reasons: waiting, contact, released, invalidated, contact_timeout.
+    Partial resets clear only the requested environments.
+    """
+    reasons=('waiting','contact','released','invalidated','contact_timeout')
+
+    def __init__(self,n,device,max_contact_s=.05):
+        self.max_contact_s=max_contact_s
+        self.started=torch.full((n,),-1.,device=device)
+        self.reason=torch.zeros(n,dtype=torch.long,device=device)
+
+    def reset(self,ids):
+        self.started[ids]=-1.;self.reason[ids]=0
+
+    def update(self,time,state,touching,legal_hit,tcp,normal,tcp_velocity):
+        begin=(self.reason==0)&touching&legal_hit
+        self.started[begin]=time[begin];self.reason[begin]=1
+        invalid=(self.reason==1)&~legal_hit
+        self.reason[invalid]=3
+        timeout=(self.reason==1)&(time-self.started>self.max_contact_s)
+        self.reason[timeout]=4
+        separation=((state[:,:3]-tcp)*normal).sum(1)
+        speed=((state[:,3:]-tcp_velocity)*normal).sum(1)
+        released=(self.reason==1)&~touching&(separation*speed>0)
+        self.reason[released]=2
+        return released

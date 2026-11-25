@@ -1,0 +1,129 @@
+{
+  "schema": "airbot-d-e-frozen-paired-v1",
+  "status": "PREPARED_NOT_RUN",
+  "question": "Can an already accurate apex predictor help the policy learn returns?",
+  "groups": [
+    "D",
+    "E-frozen"
+  ],
+  "seeds": [
+    7101,
+    7102,
+    7103
+  ],
+  "num_envs": 16,
+  "transitions_per_seed": 6144,
+  "iterations": 16,
+  "rollout_steps": 24,
+  "checkpoint_selection": "last",
+  "common_cfg": {
+    "schema": "airbot-m7-ab-v1",
+    "scope": "M7.1-3 and small A/B diagnostic, no deployment",
+    "physics_hz": 960,
+    "decimation": 20,
+    "history": 5,
+    "env_spacing_m": 5.0,
+    "action_scale_rad": [
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.6
+    ],
+    "action_scale_basis": "Candidate symmetric 0.6rad envelope around M5 ready, bounded by URDF and checked against M5 before PPO",
+    "observation_clip": 10.0,
+    "reward": {
+      "contact": 1.0,
+      "legal_return": 5.0,
+      "action_rate": -0.001,
+      "fault": -1.0
+    },
+    "ppo": {
+      "steps": 24,
+      "epochs": 5,
+      "minibatches": 4,
+      "learning_rate": 1e-05,
+      "entropy": 0.006,
+      "clip": 0.2,
+      "init_std": 0.3,
+      "hidden": [
+        512,
+        512,
+        128
+      ]
+    },
+    "smoke_max_s": 1800,
+    "seeds": [
+      7101,
+      7102,
+      7103
+    ],
+    "control_note": "48Hz bounded cubic interpolation validated against M5 centre motion; obsolete stop-at-every-request limiter rejected",
+    "diagnostic_iterations": 16,
+    "serve_z_m": 2.3,
+    "serve_y_half_range_m": 0.015
+  },
+  "evaluation": {
+    "seed": 7531,
+    "serves_per_policy": 32,
+    "distribution": "Z2.3_only",
+    "dataset_role": "reused_development_not_new_heldout",
+    "policies": [
+      "zero",
+      "fixed_D_7101",
+      "fixed_D_7102",
+      "fixed_D_7103",
+      "E_initial_7101",
+      "E_initial_7102",
+      "E_initial_7103",
+      "E_final_7101",
+      "E_final_7102",
+      "E_final_7103"
+    ],
+    "total_scored_episodes": 320
+  },
+  "fixed_d": {
+    "7101": {
+      "path": ".agents/runs/foundation/m7/m74d/d/D_7101/policy.pt",
+      "sha256": "d2033e8d8ae2a005d6c58662e161e0a38534376ff6172a4851aa8a6eb61d2f95"
+    },
+    "7102": {
+      "path": ".agents/runs/foundation/m7/m74d/d/D_7102/policy.pt",
+      "sha256": "7f57ccd9847cf4d9f6d2dfcc6fa46cb88c923020feb0e3390615cdc1aa3419e6"
+    },
+    "7103": {
+      "path": ".agents/runs/foundation/m7/m74d/d/D_7103/policy.pt",
+      "sha256": "ab283386e04d2bae2452c0dac0efd72d81eac516722f8709131f0d7b0f5618bf"
+    }
+  },
+  "interpretation": {
+    "primary": "whole predictor module addition, including135dims and166.7ms context",
+    "paired_metrics": [
+      "legal_return_rate",
+      "hit_rate",
+      "target_success_rate",
+      "outcomes",
+      "faults",
+      "E_final_minus_D",
+      "E_final_minus_E_initial"
+    ],
+    "ceiling": "32/32 leaves no observable improvement in that metric; report saturation",
+    "floor": "0/32 cannot distinguish ineffective hints from exploration/short-budget failure; no retuning",
+    "training_replications": 3,
+    "episode_independence": false,
+    "followup_content_controls": "same-dimension mean/shuffled hints are separate future experiments"
+  },
+  "pretraining": {
+    "train_serves": 128,
+    "validation_serves": 32,
+    "train_windows": 4868,
+    "validation_windows": 1223,
+    "epochs": 20,
+    "batch_size": 32,
+    "optimizer_steps": 3060,
+    "recorded_fit_seconds": 2.641097134910524,
+    "compute_scope": "historical fit walltime only; collection/selection/audit costs separate, total GPU cost not measured",
+    "raw_heldout_opened_this_task": false
+  }
+}

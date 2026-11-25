@@ -1,0 +1,49 @@
+{
+  "repository": "https://github.com/google-deepmind/competitive_robot_table_tennis",
+  "commit": "54cf18e41a8f134d98ad38710001ed50aabb8ebc",
+  "files": [
+    {
+      "path": "README.md",
+      "url": "https://raw.githubusercontent.com/google-deepmind/competitive_robot_table_tennis/54cf18e41a8f134d98ad38710001ed50aabb8ebc/README.md",
+      "sha256": "a8b9f79f414b50bbdb300b75d3964e01823bd13a1994e71652404d22cfadbe41",
+      "bytes": 3908,
+      "git_blob_sha1": "5426a25a7dab3ade8b55e7765a5e9829b7a68462"
+    },
+    {
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/google-deepmind/competitive_robot_table_tennis/54cf18e41a8f134d98ad38710001ed50aabb8ebc/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358,
+      "git_blob_sha1": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+    },
+    {
+      "path": "ball_states_viz.ipynb",
+      "url": "https://raw.githubusercontent.com/google-deepmind/competitive_robot_table_tennis/54cf18e41a8f134d98ad38710001ed50aabb8ebc/ball_states_viz.ipynb",
+      "sha256": "8c57cea58349f9b95d95e378f0210823025ad1e51bf776d59075a32dcfebf994",
+      "bytes": 277833,
+      "git_blob_sha1": "0138c2bbd59e85099edc68b4e294eec4e66f7cdc"
+    },
+    {
+      "path": "serves.json",
+      "url": "https://raw.githubusercontent.com/google-deepmind/competitive_robot_table_tennis/54cf18e41a8f134d98ad38710001ed50aabb8ebc/serves.json",
+      "sha256": "258179a5f873d99c4104dfcd16fab788c13c847cce928c43c1b16ea1fe9a81ad",
+      "bytes": 765327,
+      "git_blob_sha1": "129fd1bd8a7c30162baae4a24d40b9fb25925aea"
+    },
+    {
+      "path": "rallies.json",
+      "url": "https://raw.githubusercontent.com/google-deepmind/competitive_robot_table_tennis/54cf18e41a8f134d98ad38710001ed50aabb8ebc/rallies.json",
+      "sha256": "300f4bf19556dd8eb69663f46de7f642008048b746321cc98754150a4e0e1237",
+      "bytes": 3677067,
+      "git_blob_sha1": "e282e8eecd94e8ded91d7febac705b00f7e3d4a7"
+    },
+    {
+      "path": "images/coordinate_system.png",
+      "url": "https://raw.githubusercontent.com/google-deepmind/competitive_robot_table_tennis/54cf18e41a8f134d98ad38710001ed50aabb8ebc/images/coordinate_system.png",
+      "sha256": "7fb835e0666df7821df7300f80f09eee557a57f6ebb49f2fe513425bc2aa2954",
+      "bytes": 14692,
+      "git_blob_sha1": "8d89902bba624e7aed7e5ae258527661854d44f4"
+    }
+  ],
+  "tree_url": "https://api.github.com/repos/google-deepmind/competitive_robot_table_tennis/git/trees/54cf18e41a8f134d98ad38710001ed50aabb8ebc?recursive=1"
+}

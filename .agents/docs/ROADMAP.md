@@ -174,3 +174,191 @@ A/B seed7103與成功seed7101共64顆原評測球全部重播一致，PASS、退
 ## 2026-11-20：M7階段成果發布整理
 
 使用者授權將累積的學習率診斷、擦網判定、凸包碰撞修正、來球覆寫入口及M7.4首段A/B研究紀錄同步至個人`exp/ball-physics`與團隊`main`。發布前fetch確認兩端與本地基線無分歧，核對M7.4開發／訓練／主評測／初始化對照的來源雜湊與退出碼，沿用已有驗證、不重跑訓練。Git只收必要程式、測試、文件與被引用代表圖；本地PLAN、模型、逐球資料及完整執行證據保持忽略。上述「未提交／推送」描述保留為各輪當時狀態。
+
+## 2026-11-20：確認後續研究順序，C優先
+
+採用使用者路線：先驗證離拍／預測落點／過網高度與一次性return reward，再做與A/B同題目、控制、seed及樣本預算的C短對照；接著D檢查兩種引導互補、E檢查learned predictor的額外價值。E必須先驗新Z2.3分布，不能外推M6精度。
+
+若首輪仍不穩定，才獨立替換reward引導目標為經動態可達性驗證的擊球點；若探索仍不足，再做BC獨立基線及BC+PPO／從零PPO對照。保持action、reward、teacher等因素的歸因界線。M8目標XY與Sim-to-Real建立在可重現策略及H0–H4證據上，不因列入路線就啟動真機。此輪發布偏好另已記錄：往後個人／團隊都使用各自main，沒有自動推送。
+
+
+## 2026-11-20：C回球引導接合與短對照完成
+
+- 向量環境接入有效接觸後的離拍鎖存、CPU參考回球預測及一次性事件獎勵。25項PACE單元、lifecycle／control／parity及96球固定模型實體重播PASS／exit0；41個無干擾有效預測的落點／網高P95誤差3.247／4.414mm，時間0.846／0.173ms，A/B行為一致。
+- 同題目／控制／預算完成C三seed各6144 transitions（約282.2s）。訓練前保存初始Actor，固定最後checkpoint；新seed7521對zero、initial3、A/B6、C3各新舊32球，共832球PASS／exit0（約653.1s），來源及權重驗證一致。
+- 新題目合法回球A32/4/32、B0/0/32、C0/24/3，initial1/0/22，zero4（均分母32）。C舊題目0/32/32，整組效用FAIL，全部目標框命中0。C7102局部改善不能代表跨seed增益；7101／7103有效碰拍退步。
+- C7102另有17顆實際合法、未碰網的回球被參考模型標unsupported_table_edge而無引導分數，保留覆蓋限制，不據此推定全部失敗根因或改模型。完整資料流、結果及單張圖見[M7筆記第15節](../../doc/notes/m7_notes.md)。下一步D只增加兩引導組合；E前先驗Z2.3 predictor。未啟動D/E、BC或真機，未commit／push。
+
+
+## 2026-11-20：D擊球＋回球引導短對照完成
+
+- D共用B的hit增量和C的一次性return增量，基本獎勵不重複，action／觀測／控制／教師／桌邊遮罩未變。96球固定模型重播PASS/exit0：D−C−hit最大1.058e-6分，8次全reset與15次部分reset隔離PASS，自由飛行精度與C一致。25項單元及lifecycle／control／parity亦PASS。
+- 訓練前凍結7531評測與既有初始化SHA，D三seed各6144（總18432，291.6s）；zero+initial3+A/B/C/D各3共1024球共同評測PASS/exit0（750.5s），來源／執行程式／權重驗證一致，固定最後模型，未重訓A/B/C。
+- 新題目合法A32/4/32、B0/0/32、C0/23/1、D0/7/0，initial1/0/27、zero2（每格32球）。D有效碰拍32/7/32，第一／三seed全wrong_bounce，第二25顆unexpected_contact；舊題目D0/32/0，目標框全部0。D三seed效用皆FAIL，未呈現互補增益；接合正確不代表學習成功。
+- D7101有5個有效離拍預測最終失敗且均有網接觸，保留預測範圍限制，不把它或獎勵尺度當成已證實根因。詳細方法、結果與一張圖見[M7筆記第16節](../../doc/notes/m7_notes.md)。下一步E先收集／切分／驗新Z2.3 predictor；尚未開始E、可達點／BC或真機，未commit／push。
+
+
+## 2026-11-20：E新分布資料、在線接口與覆蓋診斷
+
+- Z2.3重新收集128/32/64整serve後開窗，224條皆有apex，獨立資料完整性審核PASS/exit0。收集啟動程序退出143，雖資料已完整落盤，仍保留異常退出，不列程序PASS；最初CLI高度限制及系統/tmp無餘量亦已定位處理。
+- 原MLP／20epochs／原門檻不改，test2,428窗3D RMSE10.88mm、固定train平均點12.85mm；物理／等速共同2,424窗342.85／1832.27mm。物理基準反彈前／後5.89／2.34mm更準，跨反彈估速拖累整體；有效窗口覆蓋原始89.40%，共同覆蓋99.84%。離線原30mm／優於等速及教師門檻PASS，非沿用M6舊結果。
+- E增加3D+valid至actor135維，critic200維不變，獨立在線MSE近期buffer／batch1024／恰好前20次更新資格，未載離線模型。26單元、真向量same-step／reset／無效／checkpoint、lifecycle/control/parity/combined皆PASS/exit0；實測巢狀history9時刻、166.7ms。
+- E四輪smoke（每次1536 transitions）首次使用提示16回合在0.5s，後續18回合83.3ms；擊球前699/1218步用到提示，12次離拍中6次有效return。4次MSE epoch實際僅5次optimizer更新，使用中提示對教師RMSE2.42→2.37m；不能套用離線10.88mm或宣稱在線提示有效。E自己的initial已保存，同16顆開發球合法由0到4，但非D/E公平比較。
+- 獨立重載初次CPU/GPU張量比對FAIL，修正後16球一致、PASS/exit0；為驗證目前runner來源另重跑相同smoke，結果一致，兩次共3072個工程驗證transitions，沒有選模型。新增一張引用圖及[E專題筆記](../../doc/notes/m7_predictor.md)，M7第17節／索引／README／SPEC／DESIGN／本地PLAN同步。E三seed效用NOT_RUN；下步先明確在線更新量／收斂診斷，不默默改為離線預訓練，未commit/push或操作真機。
+
+
+## 2026-11-20：在線predictor原20次資格收斂診斷
+
+固定D7101/7102/7103權重、共同serve7540與原OnlinePredictor配置，各16env×24×20=7680 transitions，總23040，PPO更新0。三條流完整PASS/exit0，320.8s，policy及來源不變；第21次cutoff且模型/RNG/optimizer計數不變。實際optimizer步20/37/36，固定validation RMSE由2.409m降至1.878/1.282/1.325m，三條皆未達30mm參考；固定train均值validation12.08mm。提示可提供約78.06%/80.87%/79.63%，D不讀提示，不冒稱實際使用或E聯合訓練效果。保留全20點與最後模型，沒有重開test、選checkpoint或加預算。[E筆記第7節](../../doc/notes/m7_predictor.md)附一張曲線；下步候選僅batch1024對32的同資料／同初始化單因素診斷，另報增加的optimizer工作量。未執行該對照，未commit/push或真機。
+
+
+## 2026-11-20：batch1024／32配對診斷完成
+
+同三個固定D、同初始化6100、同資料buffer／shuffle及20次資格；每流7,680 transitions，共23,040，PPO更新0。工程PASS／exit0，325.5s，來源／固定權重／配對／cutoff驗證通過，1024逐點重現舊結果。validation RMSE（mm）1024為1878.2／1282.4／1325.2，32為685.4／713.7／795.5，下降40–64%，但兩組三條皆未達30mm。optimizer20／37／36→501／809／719；非等計算量，不能將改善唯一歸因為更新次數。未開test或選checkpoint，正式配置仍1024，E/D效用NOT_RUN。[E筆記第8節](../../doc/notes/m7_predictor.md)保存方法、曲線及成本。下一步建議查在線資料與validation的覆蓋／標籤差異，尚未執行；未commit/push或真機操作。
+
+
+## 2026-11-20：predictor資料與擬合診斷完成
+
+既有模型純推論交叉評測PASS／exit0，未開test或訓練。三流在線32對自己buffer教師RMSE113.1／74.8／56.2mm，validation685.1／713.4／795.1mm；離線MLP在buffer10.3–10.5mm、validation9.91mm，固定平均約12mm。validation反彈後1.06–1.24m，貢獻>99%平方誤差；buffer較晚飛行覆蓋不足，與自身擬合不足並存，未唯一歸因。
+
+固定D7102、serve7540、16env×72步=1152 transitions補採PASS／exit0（27.3s），MSE/PPO0。879窗座標／時序／快照／reset／hit遮罩核對通過；871窗固定與重算教師RMSE1.49mm，8窗重算below_surface保留且未從模型誤差排除。官方4096env滿buffer每epoch492 optimizer步、cutoff20 fresh-run21資格是原碼推導；本地恰好20保持。詳細交叉表／XYZ／phase／env／圖見[E筆記第9節](../../doc/notes/m7_predictor.md)。下一優先提案E-frozen隔離提示價值，未實作；E-online保留，無參數掃描／策略對照／commit/push或真機操作。
+
+
+## 2026-11-20：同球四種動作可視化
+
+使用原M5 validation_0，比較原中央script、zero、既有A7101／B7101；兩段真PhysX重播PASS／exit0，無新訓練或state write。M5／zero／A合法，B碰拍後wrong_bounce。碰拍前TCP速率.871／約0／.543／.730m/s，X分量+.817／約0／+.456／−.666；落桌X/Y為(.7445,−.0037)／(.1183,−.0039)／(.1730,.2475)／(−.8822,−.0431)m。M5命中中央，A只是合法；單球不得代表策略效用。新增[動作筆記](../../doc/notes/motion_comparison.md)及一張引用圖，6.4秒0.25倍速影片／trace留本地。E-frozen暫未開始，沒有commit/push或真機操作。
+
+
+## 2026-11-21：DeepMind Dataset-to-AIRBOT Feasibility Audit
+
+固定官方54cf18e4，15,792筆（2704 serve／13088 rally）來源／授權／九維狀態／proper座標＋桌高已核對；全資料分布與零旋預測完成。速度中位5.49m/s、P5–95 3.90–7.68，spin中位48.7rad/s；無完全零旋紀錄。保守≤10rad/s得814，現任務階段相容343（342 rally／1 serve），沒有把其餘資料當策略失敗。
+
+固定面96筆0候選；位置診斷96+247全343得8命令候選，補驗全動作碰撞；原M5中央有限規劃343得0候選。真PhysX共102個rawrow、176cases（96zero+80cross）PASS／exit0：zero0合法，8專用全碰拍但7wrong_bounce/1out，矩陣15碰拍/80、0合法，單固定腳本最多碰3/8。零旋反彈位置／時間P95 4.78mm/1.09ms，非真spin物理驗證。343中335是未找到見證，不是不可達證明。
+
+[審查筆記](../../doc/notes/deepmind_feasibility.md)與一張分布／矩陣圖、來源與重跑入口已完成；8接觸案例另存、合法回球清單空且NOT_READY，未接入訓練。下一步需先取得少量合法回球見證，再建立不同動作與獨立測試分布；不改PPO／預算／碰撞或ready。未commit/push或真機操作。
+
+
+## 2026-11-23：DeepMind小型完整回球見證搜尋
+
+依使用者授權，保留原控制／物理／ready／PPO，前三個train接觸案例9378、10818、5255各27個擊球時間／中央落點／飛行時間組合，以面內轉角自由的接觸位置＋法向IK診斷。81組／162次局部求解均未過姿態條件，未進拍速／軌跡與PhysX，未找到新合法回球見證；不構成不可達證明。CPU5.25s、exit0、source SHA不變；流程PASS、見證未取得、H6及E-frozen NOT_RUN。詳見[審查筆記§10](../../doc/notes/deepmind_feasibility.md#10-從碰得到補查打得回去2026-11-23)。原summary與176次重播不覆寫，沒有commit/push。
+
+
+## 2026-11-23：目前安裝的球拍工作空間採樣
+
+兩範圍各4096 Sobol姿態＋ready，現在±0.6rad全4097靜態清晰；完整URDF範圍2953清晰／1144碰撞，納入現在集合後7049姿態。保留拍心、法向及正拍面球心潛在接觸點，球桌／網／地面球體穿透另篩；一張三視／3D圖與[筆記](../../doc/notes/racket_workspace.md)。目前球心Y採樣極值−.355..+.358m，非每個高度都可達的方盒。CPU流程PASS／exit0、無PPO／PhysX／真機；動態路徑、時限、合法回球NOT_RUN。支援另存底座平移診斷，非安裝支撐認證。
+
+追加九組對照：±.3/.6/1.0rad × 後退0/.15/.30m，各4097姿態，原位.6復用，新增8組32776次靜態姿態檢查。原位最前球心X−.876/−.779/−.677m；後退.3且±1.0到−.977m。±1.0碰撞79/79/76，.3/.6全0；退後僅多3個靜態姿態，未證明更易回球。comparison.json／verification與第二張九宮格圖完成，支架未建模，維持原配置。
+
+
+## 2026-11-23：±0.6／±1.0rad回球姿態配對診斷
+
+三個固定train球，每組81候選／162次局部IK；±0.6逐候選重現舊誤差，兩組候選輸入相同。兩組姿態合格均0，±1.0最佳誤差改善但仍不達標。81候選中80個較寬解貼到J5 URDF上限1.7628rad；ready1.1使正方向最多+.6628rad，J3亦受URDF下限限制。原始官方URDF值核對一致；不作實機限位確認或全域無解聲明。CPU5.28/5.43s、exit0，配對工程PASS，回球見證未取得，軌跡／PhysX NOT_RUN，正式PPO／物理／安裝均未改。詳[筆記§11](../../doc/notes/deepmind_feasibility.md)。
+
+
+## 2026-11-23：固定五顆DeepMind train球A組PPO完成
+
+新bank接口與34項PACE單元PASS；當前source lifecycle/parity/control/bank四個PhysX gate全部PASS/exit0，五舊腳本重現5/5碰拍（4wrong_bounce/1out）。三seed7101/7102/7103各6144，共18432transitions，actor/critic更新且loss有限，固定最後模型。主要評測zero5+initial15+final15全0有效碰拍／合法；重載15回合逐球一致。訓練完成回合116/112/118，有效碰拍5/1/3，全部0合法；合計9/346接觸，8wrong_bounce/1out。這次A短配方未學成，非不可回證明、非泛化測試。
+
+主流程225.22s wall time、PASS/exit0，沒有加預算、改ready／action／物理。小manifest、權重、逐球motion與發球序列保留m7/deepmind_five；[筆記](../../doc/notes/deepmind_ppo.md)及單張矩陣圖已完成。下一步先選接觸探索的單變因診斷；未啟動BC／±1.0／新reward或真機。
+
+
+### 2026-11-23：五球接觸BC初始化的固定配方完成，閉環門檻FAIL
+
+新增獨立pace-bc及Actor-only初始化接口；核對固定PACE上游Distillation後，以原Actor子網加PyTorch Adam/MSE接合，不改原PPO／環境／控制。原35球zero/initial/final與五接觸腳本重現；收237筆首episode快照、三seed各2000full-batch更新，Critic/std逐值不變，最後模型及重載皆0/5碰拍、0/5合法。離線MSE4.7394e-7／5.1551e-7／5.9745e-7；44單元PASS、主流程PASS/exit0、127.23s walltime（fit11.46s），BC接觸gate FAIL，噪聲及BC＋PPO NOT_RUN，無新PPO transitions。
+
+另作15次只讀閉環定位，保持所有權重／環境：15案例action誤差於.146–.271s超.05、q誤差於.125–.208s超.01rad，均早於腳本.579–.959s接觸前時刻；保存示範觀測的逐步誤差仍≤.002121。這是偏離累積的直接量測，不獨斷前動作／qd／控制器的因果占比，也不以小loss宣稱模仿成功。單張圖與資料流／負結果／入口在deepmind_ppo筆記，候選下步為先驗證偏離狀態的有效修正示範；未開始新資料聚合或訓練。未commit/push／真機。
+
+補充重播的Kit退出問題已修：沿既有clear_instance/post_quit/fast shutdown生命週期，最終PASS/exit0。兩次失敗發生在量測結束後，三次共45episode量測完全一致，仍只計15案例；沒有重做BC，保留失敗metadata與最終逐步資料。
+
+
+### 2026-11-23：同球BC三方式實際物理重播與影片
+
+依使用者要求先看影片，固定第一ID9378／seed7101，不訓練；原五球每方式一次，共15個計分episode。原script5/5hit、BC讀保存示範觀測預先算action後播放5/5hit、BC自主讀即時obs0/5hit；全部0legal。新預算BC與script逐球同4wrong_bounce/1out，自主BC重現歷史結果。擷取session63595 PASS/exit0，原source／script／資料／權重hash及權重不變核對通過。這是實際PhysX對照，支持自主回饋後偏離的方向，不是全三seed結論或可部署反應式政策。
+
+`tests/pace_bc_rollout.py --capture-comparison`復用原bank與motion量測，120Hz記姿態／960Hz事件；`scripts/plot_motion_comparison.py --bc-report ... --video ... --poster ...`重繪同步三欄0.25x，簡化外形明標。影片／poster／trace只留本地bc/replay_comparison，公開五球筆記記錄解讀與生成入口；未改正式PPO／觀測／控制，未commit/push或真機。
+
+影片生成曾遇metadata與輸入JSON同名，已將輸出改成獨立_visuals.json，並在寫入前拒絕輸入／輸出路徑重合；新舊CLI拒絕案例驗證通過。以相同條件無訓練重播恢復完整擷取，SHA256與首次原檔逐byte一致，無結果漂移；實際共兩次×15episode，不當額外獨立證據。
+
+### 2026-11-24：BC前動作／速度回饋四組介入完成
+
+固定seed7101、原五球及權重，無訓練；自主／只替換五幀前action／只替換qd／共同介入，20計分episode有效碰拍0／1／4／4，全部0合法。前50ms實際q／qd無偏差，前action已影響輸出；187.5ms速度介入的五球action RMSE中位數.094374→.001223，實際q .033620→.000804rad。前action介入仍有單球退化，10818四組皆漏接，不能當成唯一根因或特徵刪除方案。
+
+`tests/pace_bc_rollout.py --feedback-audit`只改Actor輸入副本，226次推論核對原觀測／歷史／真實前action／控制記憶未變；基線逐步action／q與舊證據重現。session85591 PASS/exit0、35.37s wall time，47單元PASS，完整20軌跡獨立只讀重算PASS。事前protocol、結果與NPZ留本地bc/feedback*；沿既有繪圖入口新增一張引用圖，詳細解讀與命令見[五球筆記](../../doc/notes/deepmind_ppo.md#bc前動作與速度回饋診斷)。原自主BC gate仍FAIL，noise／BC+PPO NOT_RUN；下一候選先驗偏離狀態恢復動作，未新增訓練、改物理或發布。
+
+### 2026-11-24：五球接管可恢復，修正BC兩組達標
+
+固定舊7101在6/9/12 tick接管，15/15實際有效碰拍、0合法（13錯誤落桌／2出界），10案達.01rad偏離並涵蓋5球，覆蓋PASS。15條接管軌跡提供452筆，加原237筆，各seed相同689筆做2000次更新。修正BC自主／重載均2/5、4/5、4/5，舊BC均0/5；新自主0合法，三seed共同gate FAIL，noise與PPO NOT_RUN。收集／擬合／獨立重算皆PASS/exit0，50項PACE單元PASS。重算720個控制步、452筆標籤與三組損失；兩次Adam建立前啟動失敗，修正匯入順序後完成三次有效擬合。詳見[五球接管與修正示範](../../doc/notes/deepmind_ppo.md#偏離後接管與修正示範-bc)。
+
+2026-11-24：完成[新7101／9378的250ms接管診斷](../../doc/notes/deepmind_ppo.md#新7101的9378250ms接管診斷)，固定模型兩個PhysX回合，session59921 PASS/exit0、20.85s。自主漏接數值重現；接管0.932288s有效碰拍，1.092702s己方落桌，0/2合法。切換前obs/q/qd/前action/控制記憶逐值一致，正常運動state write0；舊三參考於250ms的q差.07003/.11620/.13976rad。新Actor在舊250ms接管樣本仍有.09254動作RMSE，不能把失敗全歸因資料覆蓋。獨立CPU驗112步／hash鏈／6組統計與Actor重推PASS/exit0；50PACE單元PASS，單圖及原圖像素回歸PASS。下一候選為其餘四個漏接(seed,ID)同時刻接管，不自動重訓；原三seed2/4/4 gate仍FAIL，噪聲/PPO NOT_RUN。未commit/push／真機。
+
+
+### 2026-11-24：BC三seed初始化門檻通過，短PPO接觸退化
+
+四個剩餘漏接案固定250ms接管，3/4恢復有效碰拍，全部0合法；7102/14852未救回，完整保留。成功後綴新增70筆，加前次9378的33筆，總資料792筆。候選1只加資料，三seed碰拍4/2/1，較原2/4/4有退化；候選2資料不變，只改官方cosine學習率衰減，固定2000步最後模型，自主與重載3/4/3，共同接觸門檻PASS。兩候選均0合法，候選3未執行。
+
+依授權直接完成300次配對噪聲：原initial0/0/0，候選2為6/7/8（各50球），0合法。再各6144 transitions短PPO，共18432；最後自主與重載碰拍1/0/1（各5球），0合法、0目標。訓練332完成回合、42次碰拍、0合法。工程與來源／預算／初始化／重載獨立核對皆PASS/exit0，54PACE單元PASS；研究上沒有合法回球收益，不能把BC門檻當穩定回球能力。
+
+[研發筆記](../../doc/notes/deepmind_ppo.md#短ppo完成初始化已可用但原配方未保住碰拍)附完整圖、資料流、歷史來源唯讀重算命令、負結果及成本。下一候選為固定BC後隔離探索噪聲，尚未開始；本輪沒有延長訓練、放寬保護、合併E-frozen、commit/push或真機操作。
+
+### 2026-11-24：E-frozen獨立接口與配對研究準備
+
+在隔離工作區把已驗Z2.3離線MLP接為顯式E-frozen，原E／E-online仍在線從零；D115維、E135維、critic200及D原reward／控制不變。來源鏈唯讀核對PASS，模型SHA為7e0f666b…，原validation選定epoch20、RMSE10.389mm；保留資料launcher exit143與後續持久資料完整性PASS，不重開raw held-out或選模。額外預訓練128train／32validation、3060 optimizer步、原2.641s另列。
+
+CPU統一選組27/27 PASS、零skip／error／failure，session32686 exit0、執行1.088s，receipt為`m7/e_frozen/cpu.json`。12項模型／教師／窗口、10項環境張量／事件／控制、5項runner官方PPO合成更新；既有validation1223窗推論逐值一致、RMSE10.389121mm，checkpoint／storage不變、MLP無optimizer／gradient、initial RNG及online alias通過。修正NaN時間清history與凍結建構器只設CPU RNG；後者用CPU mock檢查CUDA seeding不被呼叫，不冒稱已測GPU RNG。公開入口`./run.sh --unit frozen`。
+
+以上準備輪交付時，GPU凍結／控制／重載與三seed策略比較均NOT_RUN，當時沒有GPU或策略實驗；後續GPU工程狀態見下一條。配對規格固定7101–7103各6144 transitions、最後checkpoint，既有D保持凍結並在當前來源重評；Z2.3的已讀7531共32球，zero1＋D3＋E-own-initial3／final3，共320計分episode。這是配對開發診斷，不是新held-out。E九時刻166.7ms對D83.3ms及不同初始Actor限制均寫入[SPEC](SPEC.md)與[E筆記第10節](../../doc/notes/m7_predictor.md#10-e-frozen固定準確提示再問策略能否使用)，策略效用尚無結論。沒有回寫原工作區、commit／push或真機操作。
+
+### 2026-11-24：E-frozen追加GPU工程關卡，禁止啟動訓練
+
+在BC研究結束後，依使用者本次限定授權於隔離工作區順序執行五個GPU工程關卡。frozen2／lifecycle16／parity16／control2／combined16全部PASS／exit0；smoke／PPO／策略效用NOT_RUN，新增PPO與MSE更新0。本輪已在五個關卡後停止，下一個會更新PPO的smoke未執行。
+
+frozen驗真135／200維觀測、九時刻same-step提示、保存觀測不變、正常步進無狀態寫入、局部reset／invalid清history及磁碟重載，實測首次prediction83.3ms、凍結權重與無梯度契約通過。首次空快取程序138.305s含場景／資產準備，不作推論效能指標。parity16僅正式比對env0，重現legal_return、最大位置差0.024512mm；control2正式TCP／時刻量測亦取env0，位置0.906785mm、方向0.002197rad、線速度0.024794m/s、角速度0.059565rad/s、時間0.583768ms，全在原門檻內。
+
+combined程序62.666s，固定六個A/B模型96球全部重現，D=C+hit最大誤差1.05798×10⁻⁶、return不變；全量reset8次／局部15次隔離通過。49次有效預測中8次後續接觸另列，41個自由飛行樣本落點／網高P95誤差3.247415／4.413510mm、落桌／過網時間P95誤差0.845743／0.172956ms，全在20mm／10ms原門檻內；96球全部失敗仍保留，不把精度樣本當全任務成功率。
+
+各JSON／exit code與54份入口／gate／設定／資產啟動前hash留於`m7/e_frozen/gates`，歷史CPU27證據不改寫。沒有新held-out、選模或資料擬合；真CUDA RNG尚未逐值驗證，完整runner仍NOT_RUN。詳細資料流、量測範圍與後續需授權入口見[E筆記§10.6](../../doc/notes/m7_predictor.md#106-實際驗證狀態與入口)；未回寫主工作區、發布或操作真機，無新增圖／影片。
+
+
+### 2026-11-24：E-frozen smoke、三seed短比較與BC衝突檢查完成
+
+使用者追加授權後，隔離工作區smoke PASS／exit0（session71243，1536 transitions／29.402s）；三seed7101–7103各16輪／6144、共18432 transitions PASS／exit0（session45614，187.301s）；共同7531／Z2.3、32球×10策略=320episode PASS／exit0（session65234，152.094s）。秒數包含各程序內建評估；smoke與正式runner合計144個7201工程episode另外列帳。四次訓練的Actor／Critic確實更新，52輪記錄predictor MSE0、凍結權重不變；固定最後checkpoint，沒有新增predictor擬合、選模或held-out。歷史CPU27與GPU五關證據保留，預訓練3060步／2.641s另計。
+
+共同題目合法回球D0／7／0、E-own-initial31／0／0、E-final32／3／0；碰拍分別32／7／32、32／31／1、32／3／15，各分母32，目標命中全0。7101初始已接近上限，PPO只多1合法；7102對D少4合法且自身碰拍減28；7103碰拍多14仍0合法。描述性E35/96對D7/96及自身initial31/96不能當96次獨立訓練，**工程PASS，跨seed穩定效用尚未證實**。所有失敗與合法球落點樣本數分開報，三seed訓練19個arm_fault及1個illegal_hit保留。
+
+E-final提示輸入覆蓋2399/2783=86.20194%、對教師RMSE9.525685mm，首次提示83.333ms；這是送進Actor的可用欄位，未證明Actor因果依賴提示。對D比較仍包含135維輸入、較長歷史及額外預訓練。獨立只讀權重／指標／來源重算PASS／exit0，D逐球離散結果重現、落點分量最大差2.861μm。證據為本地e_frozen的training、paired_evaluation、verification及experiment_execution；詳[E筆記§10.7](../../doc/notes/m7_predictor.md#107-三seed短比較提示已準確策略效用仍不穩定)。
+
+隨後只讀BC衝突檢查完成：五份共用文件dry merge僅ROADMAP一處追加衝突，未見已快照共用程式文字衝突；但E改動source字典鍵／env／predictor及runner／CLI，舊BC嚴格歷史receipt比對會拒絕。主線probe與recovery檔案必須保留，不能整包覆蓋或改寫hash繞過；後續需明確當前來源相容性證據及無訓練重播，整合本輪NOT_RUN。BC2/5、4/5、4/5共同gate仍FAIL。詳[§10.8](../../doc/notes/m7_predictor.md#108-與主線bc的衝突文字可合不代表歷史驗證可直接沿用)與本地conflict_audit.json；未回寫主線、合併、commit／push或操作真機。
+
+### 2026-11-24：E-mean同維度／同初值比較與前置相容性診斷
+
+使用者另行授權獨立E-mean比較，在新隔離工作區保留Actor135／Critic200、D reward／控制、Z2.3／Y±.015m與正式三seed各6144預算。常數只取原train6101的128serve／4868窗口教師label，先各serve平均再等權跨serve平均；顯式mean模式不建MLP、optimizer或RNG，沿用五點history／valid／reset及checkpoint契約。每seed一次官方ActorCritic建構，先逐值核對全部Actor／Critic／std與固定E-frozen initial，再載入。新CPU建構後RNG SHA與當前CUDA保存可驗；舊learned initial沒存CUDA RNG，歷史GPU完全相同仍不可證。
+
+首輪CPU39/39 PASS、零skip／failure／error，session76354 exit0，test1.656s／含launcher wall3.539s。該來源frozen2、lifecycle16、parity16、control2、combined16、mean2六項GPU程序皆PASS／exit0；mean實測CUDA RNG保持、三seed全初始張量、same-step／invalid／gap／reset／checkpoint及來源一致。新的歷史相容入口`mean-compat`預定zero＋固定learned initial／final共224主要回合，首次在learned initial7101的索引7（batch0／env7，第8球）合法落點分量差10.2519989μm，超過原10μm容差，FAIL／exit1，未完成224回合；八份首輪CPU／GPU嘗試及log封存`initial_checks/`，原負結果不改寫。
+
+兩個新GPU診斷程序完整退出：without-D64回合／31.335s再現同一落點超限、32個learned分類相同，checks FAIL；with-D96回合／53.723s的zero／D7101／learned initial7101分類與已記錄落點逐值重現，checks PASS。兩者exit0只表示診斷完成；實測前置評測順序敏感，尚未證明物理機制。PPO前只修正mean評測器與實驗規格，保持歷史zero→D7101→learned initial／final7101→D7102→…順序，不改10μm門檻、物理、reward、控制或訓練預算。D96上下文另列：相容224主要／320實際回合，正式416主要／512實際回合；source refresh保留舊／新hash與原因。session83832於新來源完整重驗CPU39與七GPU，全部PASS／exit0；CPU test1.762s／含launcher wall3.762s，相容320實際回合report257.154s／含launcher wall266.665s，十組分類與已記錄落點逐值重現、最大落點分量差0。
+
+完整前置PASS後，session40806順序完成mean smoke1536、三seed各6144／共18432及共同416主要＋D96=512實際回合，三程序均PASS／exit0；report時間28.560／189.067／237.066s，含launcher wall46.003／204.830／246.344s。兩組initial合法均31／0／0；learned-final32／3／0、mean-final0／0／0，各分母32，目標全0。learned相對自身initial增1／3／0，mean增−31／0／0；final碰拍learned32／3／15、mean32／32／20。主要416回合完整分類legal99／wrong_bounce165／unexpected_contact152，其餘fault0；訓練另有arm_fault1／9／10、out13／31／9，未丟失失敗。learned-final提示覆蓋2399/2783、教師RMSE9.525685mm；mean-final2425/2809、11.321587mm，暖機／invalid契約一致。
+
+本次同維度／全初值配對後，learned在固定短比較的合法回球指標上優於mean，最大差異是保住7101初始能力；不是三seed一致從零學會或跨題目因果優勢。舊CUDA RNG未保存、動態較早歷史、三seed、上下限及順序敏感限制保留。52輪mean更新記錄全為optimizer0／常數不變，Actor／Critic均確實更新；7201工程144回合、兩次診斷64／96、combined首輪96＋重跑96、D上下文均另列，MLP歷史3060步／2.641s與未獨立計時的mean平均歸約不混算。首個失敗只有錯誤摘要，未據此補算持久逐球回合總數。
+
+獨立CPU只讀重算最終session54652 PASS／exit0，核對定稿execution SHA、權重／RNG／來源、全分母、差值與加權提示統計，未新增GPU或訓練。舊E-frozen182/182保護項不變；主工作區273項中13項在BC並行工作改變，本任務未寫入／回復主線，不能宣稱其全部不變。完整結果、程式資料流與負結果詳[E筆記§11](../../doc/notes/m7_predictor.md#11-e-mean讓動態提示與固定平均點使用同一初值)；公開命令見[README](../../README.md)，證據另存`m7/e_mean/`。本輪完成並停止，未合併、commit、push、真機或追加訓練，既有E-frozen與BC結果不改寫。
+
+
+### 2026-11-24：E-frozen／E-mean選擇性回寫主工作區
+
+使用者授權回寫後，先保存主工作區基線，再以原E分流snapshot的SHA還原共同文件基線，僅移入E專屬差異。SPEC／DESIGN／README／notes索引保留主線新增BC段落，ROADMAP保留兩方各自追加紀錄；E專題筆記補齊隔離實驗，M7主筆記不覆蓋。原隔離工作區與歷史receipt不改寫，先前E的39項CPU／七GPU及研究評測PASS仍屬各自來源。
+
+文件回寫完成，當前整合來源CPU兩選組mean39／BC28，合計67項PASS，零skip／failure／error、兩程序exit0；固定Docker內只跑CPU，沒有新增研究訓練。證據為`e_integration/cpu_mean.json`與`cpu_bc.json`；GPU工程frozen／mean／lifecycle／parity／control／combined／bank七關全部PASS／exit0且完成token有效，證據為`gates/execution.json`。另行CPU preflight_v2嚴格載入12模型、核對286保護檔／40歷史receipt／5份歷史來源重建，PASS但不另加單元測試數。專用重播首輪launcher缺URDF importer，FAIL／exit1、0球；改為正式入口網路設定後，bank_v2 60球與probe_v2 2球皆PASS／exit0（session41404，程序wall102.998／28.460s），分類完整重現。首輪CPU的`hashlib.file_digest`相容性FAIL與原launcher失敗均保留。主線最新BC候選2的3/4/3碰拍與PPO後1/0/1、全部0合法均保留；較早2/4/4 FAIL不冒充最新BC狀態。資料流、歷史／當前證據邊界及後續結果統一見[E筆記§12](../../doc/notes/m7_predictor.md#12-主工作區選擇性回寫與整合驗證)，本地整合證據另存`m7/e_integration/`；本輪沒有新增訓練、commit／push或真機操作。
+
+
+整合相容重播的legacy BC／recovery BC／candidate2 BC／candidate2 PPO碰拍依序0/0/0、2/4/4、3/4/3、1/0/1（每格5球），全0合法；60球包括miss28／wrong_bounce16／out12／unexpected_contact3／arm_fault1。probe9378自主miss、接管wrong_bounce，當次共同前綴及舊自主終局標量差0。bank無合法落點樣本，不能把空分支的0誤差當落點驗證；probe不涵蓋全歷史軌跡，其餘probe／噪聲／訓練續跑NOT_RUN。15份程式類檔與95份歷史證據已轉入，286份主線舊證據不變；獨立CPU只讀重算`verification.json`亦PASS／exit0（session33503），核對527個輸入SHA、分母、分類與probe trace，沒有新增物理回合或訓練更新。入口`tests/pace_integration.py`及execution receipt精確命令見筆記§12，舊訓練來源validator維持嚴格，本次沒有新增訓練或發布。
+
+
+2026-11-24：依使用者指示，後續優先從單拍任務定義回球獎勵與PPO時間尺度，取代先掃噪聲的建議。只讀既有程式／上游／332回合紀錄，確認A欠缺失敗球路的出球品質排序、平滑成本約−.001/回合，且gamma≈.948使1s後獎勵只保留約7.7%。這是設計適配問題的線索，不是新判定PPO原碼錯誤。整半桌離拍品質、折扣及BC保留方案尚未凍結；詳見[任務設計討論](../../doc/notes/deepmind_ppo.md#從單拍任務重審獎勵與ppo2026-11-24設計討論)。本輪無程式／配置修改，未跑新測試、重播或訓練；原驗收與失敗保留。
+
+
+### 2026-11-25：M7研究進展整理至個人main
+
+本次使用者授權push，依發布偏好以個人倉庫main承接已合入的前次基線。發布範圍包括C／D與三種predictor接合、DeepMind可行性與固定五球研究、BC恢復／短PPO、工作空間診斷及相應研發筆記。BC初始化3/4/3、PPO後1/0/1且合法全0等負結果保留；新的任務導向獎勵與PPO配方仍屬設計討論，未實作或訓練。
+
+發布前重新核對既有整合驗證的527個輸入SHA全部一致，沿用67項CPU、七GPU工程關卡及已完成相容重播，不新增訓練或物理測試。改動檔的Python／JSON／Shell語法及Git差異檢查通過，17張新增代表圖均被文件引用。原始資料、模型、影片與本地PLAN維持runs／本地目錄，不納入Git；上游資產與原檔未改。本次目標為origin/main，團隊倉庫仍依成熟後同步的既有規則處理。

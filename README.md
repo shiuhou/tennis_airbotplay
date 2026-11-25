@@ -2,7 +2,7 @@
 
 AIRBOT Play 六軸固定底座仿真，支援裸臂與固定球拍工具。包含關節位置及限時速度控制、姿態 FK／IK、TCP、Jacobian、多路點軌跡、非零速度定時擊球、限定三目標scripted回球、靜態環境碰撞預檢、接觸監測、Stop、Reset 及 Kit 離屏錄影。
 
-研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6已完成離線物理引導與predictor驗證，M7已接通PPO並進行小規模A／B診斷，即時規劃加速不作為其前提。
+研究主線是將PACE的預測、物理引導獎勵與關節策略適配到固定六軸AIRBOT，邊實作邊理解。M0–M5提供仿真與scripted比較基線；M6已完成離線物理引導與predictor驗證，M7已完成A／B／C／D短對照，並驗證E的資料與在線接口，即時規劃加速不作為其前提。
 
 過程中的原理、踩坑與驗證邊界整理於 [研發知識筆記](doc/notes/README.md)。論文、開源專案、閱讀狀態及授權統一記錄於 [研究參考與來源](.agents/docs/SOURCES.md)。
 
@@ -143,7 +143,7 @@ M5也提供實際仿真慢放影片入口：`--mode return-demo --video .agents/
 PACE學習閱讀：先看[完整控制與PPO資料流](doc/notes/pace_pipeline.md)，再對照[獎勵公式與算例](doc/notes/pace_rewards.md)。M6已完成官方MLP的獨立監督訓練、教師／獎勵及接入契約；M7已接通actor／critic與PPO的短跑診斷。完整方法、失敗與限制見[M6筆記](doc/notes/m6_notes.md)。
 
 ```bash
-./verify_m6.sh --collect .agents/runs/foundation/m6/new_trial  # 校驗官方來源、採集PhysX資料、測試並訓練／評測predictor
+./verify_m6.sh --collect .agents/runs/foundation/m6/new_trial .agents/runs/foundation/m6/new_data  # 校驗官方來源、採集PhysX資料、測試並訓練／評測predictor
 ./verify_m6.sh --reuse-data .agents/runs/foundation/m6/new_trial    # 重用匹配的本地資料；仍重新訓練／評測
 ```
 
@@ -199,3 +199,127 @@ M7.4首段A/B使用經有限動態見證驗證的初階接球題目：來球初�
 ```
 
 這會真正啟動六次短訓練，要求當前來源的lifecycle／control／parity已PASS，輸出目錄不可已存在。高度寫入protocol／checkpoint，不改M5原檔；`pace-eval`會讀回有效高度，但其內建7201評測仍是開發診斷。前置失敗、可達性範圍與研究限制見[M7筆記第14節](doc/notes/m7_notes.md)。
+
+C（return-only）沿用相同題目與預算。先用已保存的M7.4 A/B模型與評測資料執行離拍／回球預測關卡，通過後才可開訓：
+
+```bash
+./run.sh --mode pace-check --pace-check return --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/return.json
+./run.sh --mode pace-ab --pace-groups C --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/c_new --report .agents/runs/foundation/m7/c_new.json
+```
+
+同時要求當前來源的lifecycle／control／parity PASS，輸出目錄須未存在。return關卡讀取本地`m7/m74/ab`與`m7/m74/final_summary.json`的固定參考，不會下載模型或自動重訓；缺少這批參考時不能冒稱關卡通過。詳細時序、資料流及適用範圍見[M7筆記第15節](doc/notes/m7_notes.md)。
+
+C目前已通過離拍／預測驗證及三seed短對照，工程PASS但整組效用FAIL：新題目合法回球0／24／3（各32球）。包含A/B與初始化的832球共同評測、桌邊預測限制及比較圖見[M7筆記第15節](doc/notes/m7_notes.md)。此為C階段結果；後續D/E更新見下文。
+
+
+D（hit + return）使用同題目、控制與預算，先驗證與固定C重播的分數加總／reset隔離：
+
+```bash
+./run.sh --mode pace-check --pace-check combined --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/combined.json
+./run.sh --mode pace-ab --pace-groups D --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/d_new --report .agents/runs/foundation/m7/d_new.json
+```
+
+仍要求當前lifecycle／control／parity PASS及未存在的輸出目錄。combined沿用return的固定A/B模型，另需本地`m7/m74c/return_gate.json`及`protocol.json`作已驗證C基準；缺少資料時不自動跳過檢查。方法與結果見[M7筆記第16節](doc/notes/m7_notes.md)。
+
+D已完成三seed短對照及1024球共同評測：工程PASS，新題目合法回球0／7／0（各32球），跨seed效用FAIL，未顯示兩種引導互補。E資料與接口的後續結果見下節，D/E正式效用對照尚未開始。
+
+
+E前置驗證：新Z=2.3m資料的MLP 3D RMSE10.88mm，原30mm／優於等速門檻PASS；真向量接口與四輪runner smoke已驗證。從零在線模型只有5次optimizer更新，提示對教師仍約2.4m；不能把離線PASS當成在線提示已準確。E actor135維、D115維，E另外保存初始Actor；最大歷史跨度166.7ms。方法、覆蓋診斷、異常退出紀錄及重跑命令見[E predictor筆記](doc/notes/m7_predictor.md)。沒有宣稱E策略優於D。
+
+`--mode pace-data`支援`--pace-data-dir`與`--pace-serve-z`，保護原始資料不被覆蓋；`verify_m6.sh --reuse-data NEW_OUTPUT DATA_DIR`可讀指定新資料。`--pace-check predictor`驗真向量契約，`--pace-groups E`接在線獨立MSE，`pace-eval`可重載E的policy和predictor而不訓練。E短對照須有當前離線、向量接口、runner smoke及原控制／獎勵關卡，smoke不代替效用驗證。
+
+在線predictor的20次資格診斷已完成：固定三個D行為、不更新PPO，實際optimizer步數20／37／36，validation誤差仍1.88／1.28／1.33m。`--pace-check predictor-curve`可重跑該固定預算檢查；完整曲線、可提供提示的覆蓋與限制見[E筆記第7節](doc/notes/m7_predictor.md)。後續`--pace-check predictor-batch`已完成同資料／同初始化的1024對32比較：32誤差降至0.69–0.80m，仍未達30mm；正式配置維持1024。詳見同筆記第8節，正式D/E效用比較仍未執行。
+
+
+Predictor資料／擬合診斷已完成：`PYTHONPATH=src python tests/pace_predictor_audit.py`純推論交叉評測封存模型與buffer／validation；`--pace-check predictor-audit`以固定D補採72步metadata，不訓練。離線模型在在線buffer約10mm，在線32仍有自身擬合不足及較晚反彈後覆蓋差異；教師差約1.5mm，未查到公尺級座標錯誤。完整表格、圖與重跑前提見[E筆記第9節](doc/notes/m7_predictor.md)。E-frozen的獨立接合與配對規格見下文；原E-online及正式配置保留。
+
+主工作區已依2026-11-24授權完成E-frozen／E-mean選擇性回寫。下列E研究PASS及模型屬各自隔離來源；本次整合來源CPU的mean39＋BC28合計67項PASS，零skip／failure／error、兩程序exit0；GPU工程frozen／mean／lifecycle／parity／control／combined／bank七關亦PASS／exit0。獨立BC／PPO 60球＋probe2球重播亦PASS／exit0，逐球分類重現；兩次工具／launcher前置FAIL保留。bank無合法落點樣本、probe只覆蓋9378兩案，獨立只讀重算PASS／exit0；進度與來源邊界見[E筆記§12](doc/notes/m7_predictor.md#12-主工作區選擇性回寫與整合驗證)。主線較新的BC候選2與短PPO結果保留於本頁後段，舊receipt不直接當成當前整合PASS。
+
+E-frozen顯式載入已驗Z2.3離線MLP並凍結推論，保持D的reward／控制與六維action。D actor115；E-online／E-frozen actor135，critic皆200；舊名稱`E`仍是在線從零。凍結模式要求`--pace-frozen-predictor configs/pace_frozen.json`，校驗模型／來源／資料receipt及來球分布；不符Z2.3／Y±.015m時拒絕，不能當成Z2.2泛化入口。
+
+先前CPU契約27/27 PASS、零skip／error／failure，涵蓋真實既有validation的1223窗逐值推論一致性、checkpoint／history、環境張量與官方PPO合成更新隔離。該輪是CPU／AST與合成rollout驗證，沒有啟動Isaac物理或GPU實驗；以下保留其重跑入口，會執行合成PPO更新，不做predictor MSE：
+
+```bash
+./run.sh --unit frozen
+```
+
+2026-11-24的GPU工程frozen2／lifecycle16／parity16／control2／combined16均PASS／exit0；combined重現既有96球、41個自由飛行精度樣本通過。隨後經使用者追加授權，E-frozen smoke1536 transitions、三seed各6144 transitions及共同320episode也全部PASS／exit0，predictor沒有新增MSE更新。共同7531／Z2.3上，D合法0／7／0，E-own-initial31／0／0，E-final32／3／0，各分母32；**尚未證明跨seed穩定優於D**，7101初始化已接近上限。工程覆蓋限制、所有故障、提示約9.5mm教師誤差及成本見[E筆記第10節](doc/notes/m7_predictor.md#107-三seed短比較提示已準確策略效用仍不穩定)。
+
+以下是五個工程入口。配置指向既有`m7/m74e/offline`模型與報告、資料manifest及完整固定PACE來源；固定D三模型位於`m7/m74d/d`，combined另使用上述C／A-B參考。隔離工作區已帶入這些依賴；在別的工作區缺失時不自動下載新模型、重訓或跳過驗證。依序執行凍結檢查與當前來源的lifecycle／parity／control／combined；重跑時另選未使用的gates目錄，以下路徑是本輪證據位置：
+
+```bash
+mkdir -p .agents/runs/foundation/m7/e_frozen/gates
+./run.sh --mode pace-check --pace-check frozen --pace-frozen-predictor configs/pace_frozen.json --pace-envs 2 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_frozen/gates/frozen.json
+./run.sh --mode pace-check --pace-check lifecycle --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_frozen/gates/lifecycle.json
+./run.sh --mode pace-check --pace-check parity --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_frozen/gates/parity.json
+./run.sh --mode pace-check --pace-check control --pace-envs 2 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_frozen/gates/control.json
+./run.sh --mode pace-check --pace-check combined --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_frozen/gates/combined.json
+```
+
+每一步檢查報告與process exit code，失敗先停下定位。下列為本次追加授權後已執行的入口；`pace-smoke`實際執行1536 transitions的PPO工程驗證，29.402s及32個工程評估episode獨立於三seed比較。重跑須另選尚不存在的輸出目錄，保留本次證據：
+
+```bash
+./run.sh --mode pace-smoke --pace-groups E-frozen --pace-frozen-predictor configs/pace_frozen.json --pace-gate-dir .agents/runs/foundation/m7/e_frozen/gates --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/e_frozen/smoke --report .agents/runs/foundation/m7/e_frozen/gates/frozen_smoke.json
+```
+
+當前來源關卡及`frozen_smoke.json`完整通過後，下列命令完成三seed各6144 transitions的PPO及共同評測，預先固定最後模型。訓練report記187.301s（含112個內建工程評估episode），共同評測152.094s／320episode；兩者分開計帳。以下是本次證據路徑，重新訓練時smoke及paired_train輸出目錄必須另選未使用路徑：
+
+```bash
+./run.sh --mode pace-ab --pace-groups E-frozen --pace-frozen-predictor configs/pace_frozen.json --pace-gate-dir .agents/runs/foundation/m7/e_frozen/gates --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/e_frozen/paired_train --report .agents/runs/foundation/m7/e_frozen/training.json
+./run.sh --mode pace-check --pace-check frozen-eval --pace-frozen-predictor configs/pace_frozen.json --pace-checkpoints .agents/runs/foundation/m7/e_frozen/paired_train --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_frozen/paired_evaluation.json
+```
+
+`frozen`與`frozen-eval`檢查在函式內固定Z2.3／Y±.015m，不接受訓練用的來球覆寫參數。配對評測固定已讀過的seed7531、Z2.3共32球：zero1＋固定D3＋E自身initial3／final3，共320計分episode；當前程式重評D，不重訓D。這是開發診斷，不能稱新held-out；initial與final都讀同一凍結MLP，缺失／失敗留在分母。額外預訓練128train／32validation、3060 optimizer步與原2.641秒擬合成本另報；E九時刻166.7ms、D五時刻83.3ms，因此比較不能只歸因預測內容。資料流、來源異常、CPU/GPU驗證狀態與判讀詳見[E筆記第10節](doc/notes/m7_predictor.md#10-e-frozen固定準確提示再問策略能否使用)。上述E研究在隔離工作區完成；當時的主線BC唯讀衝突檢查未代稱整合PASS，BC gate 2／4／4是該時點結果。主線後續BC候選2與PPO結果保留於下文，本次回寫驗證見[E筆記§12](doc/notes/m7_predictor.md#12-主工作區選擇性回寫與整合驗證)。
+
+
+E-mean是後續獨立授權的同維度比較：train128條serve等權平均的固定apex取代動態learned XYZ，Actor135／Critic200、全部同seed初始Actor／Critic／std張量、五點history／valid／reset、D reward及訓練預算保持配對。顯式使用`--pace-groups E-mean --pace-mean-predictor configs/pace_mean.json`，常數不建MLP、optimizer或RNG，不使用validation／held-out選點；原E-frozen模型與報告保持固定。完整配方、初始化、RNG證據邊界及動態歷史差異見[E筆記第11節](doc/notes/m7_predictor.md#11-e-mean讓動態提示與固定平均點使用同一初值)。
+
+2026-11-24隔離E-mean研究已完成：其來源CPU39/39、七GPU關卡、mean smoke1536、三seed各6144 transitions、共同416主要＋D96上下文=512實際回合及獨立CPU重算均PASS／exit0。兩組initial合法均31／0／0；learned-final32／3／0、mean-final0／0／0，各分母32，目標全0。learned在本次固定短比較的合法指標較好，主要差距是保住7101原有合法能力；7102碰拍反而較少、7103仍0合法，不能宣稱三seed都從零學會或普遍優勢。完整失敗、提示加權統計與成本見[E筆記§11.7–11.8](doc/notes/m7_predictor.md#117-完成的短比較learned保住了7101的合法回球mean沒有)。
+
+首次mean-compat的10.251999μm落點差超過原10μm容差，FAIL／exit1保留在`m7/e_mean/initial_checks/mean_compat.json`；該次只存錯誤摘要，後續兩個獨立診斷保留逐球證據並量到順序敏感，物理機制尚未證明。只修正評測順序與規格、未放寬門檻；恢復歷史D前綴後的相容重播224主要＋D96=320實際回合，十組分類一致、已記錄落點分量差0。以下是完整重跑順序，每個前置必須實際PASS才進下一階段：
+
+```bash
+./run.sh --unit mean
+mkdir -p .agents/runs/foundation/m7/e_mean/gates
+./run.sh --mode pace-check --pace-check frozen --pace-frozen-predictor configs/pace_frozen.json --pace-envs 2 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/frozen.json
+./run.sh --mode pace-check --pace-check lifecycle --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/lifecycle.json
+./run.sh --mode pace-check --pace-check parity --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/parity.json
+./run.sh --mode pace-check --pace-check control --pace-envs 2 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/control.json
+./run.sh --mode pace-check --pace-check combined --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/combined.json
+./run.sh --mode pace-check --pace-check mean --pace-mean-predictor configs/pace_mean.json --pace-envs 2 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/mean.json
+./run.sh --mode pace-check --pace-check mean-compat --pace-mean-predictor configs/pace_mean.json --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/gates/mean_compat.json
+```
+
+`mean-compat`做zero＋固定learned initial／final共224個主要回合的當前來源相容重播；另依歷史順序插入固定D三seed合計96個上下文回合，實際320回合，不更新PPO／MSE。通過後才執行下列會更新PPO的smoke；smoke結果也必須PASS，才能進正式三seed短跑：
+
+```bash
+./run.sh --mode pace-smoke --pace-groups E-mean --pace-mean-predictor configs/pace_mean.json --pace-gate-dir .agents/runs/foundation/m7/e_mean/gates --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/e_mean/smoke --report .agents/runs/foundation/m7/e_mean/gates/mean_smoke.json
+./run.sh --mode pace-ab --pace-groups E-mean --pace-mean-predictor configs/pace_mean.json --pace-gate-dir .agents/runs/foundation/m7/e_mean/gates --pace-serve-z 2.3 --pace-serve-y-half-range 0.015 --pace-envs 16 --device cuda:0 --headless --pace-output .agents/runs/foundation/m7/e_mean/paired_train --report .agents/runs/foundation/m7/e_mean/training.json
+./run.sh --mode pace-check --pace-check mean-eval --pace-mean-predictor configs/pace_mean.json --pace-checkpoints .agents/runs/foundation/m7/e_mean/paired_train --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/m7/e_mean/paired_evaluation.json
+```
+
+smoke固定1536 transitions；正式7101–7103各6144，從對應learned初始張量重新開始、不接續smoke。共同`mean-eval`固定7531、每策略32球，zero1＋learned initial3／final3＋mean initial3／final3，共416主要計分episode；保持同一歷史前綴後再評mean，D96上下文另列，實際512回合。所有失敗留各自分母，initial與final都要評，這是已讀開發題目。`mean`／`mean-compat`／`mean-eval`的檢查函式內固定Z2.3／Y±.015m，不能加入訓練用的`--pace-serve-z`／`--pace-serve-y-half-range`旗標。
+
+上述路徑保留本輪證據；重跑須另選未使用的gate、smoke與paired_train目錄並同步命令參照。當前source改變須重建相容證據，不能改寫舊receipt。舊learned initial未保存CUDA RNG，當前mean保存／核對RNG不能補證歷史GPU狀態完全相同；同維度比較也一併移除了提示對較早動態歷史的壓縮，不能只歸因預測精度。
+
+同球可視化見[動作對照筆記](doc/notes/motion_comparison.md)：M5／零動作／A7101／B7101在同一validation_0上的實測球路、拍面、拍速與落桌，附0.25倍慢放生成入口。`--pace-check motion`擷取zero／既有PPO，`motion-m5`擷取原M5腳本，`python scripts/plot_motion_comparison.py --video .agents/runs/foundation/m7/motion_comparison/comparison.mp4`重畫並產生本地短片；checkpoint及影片留本地，未新增訓練。
+
+
+DeepMind資料的[Dataset-to-AIRBOT可行性審查](doc/notes/deepmind_feasibility.md)已完成：原始15,792筆只讀分析，814筆低旋篩選、343筆符合目前任務階段；8個動態腳本能碰球，但沒有合法回球見證；343筆未整體接入M7，五顆train球的獨立探索另見下方。`python scripts/prepare_deepmind.py`取得固定commit官方原檔；CPU階段見`tests/deepmind_audit.py --stage ...`，獨立物理入口為`./run.sh --mode pace-check --pace-check dataset-audit --pace-envs 16 --device cuda:0 --headless --report .agents/runs/foundation/deepmind_audit/physics_gate.json`。資料、逐筆證據與action留本地；圖用`PYTHONPATH=src python scripts/plot_deepmind_audit.py`重畫。完整先後順序、既有目錄保護與零旋／分組限制見筆記，沒有增加訓練。
+
+球拍幾何範圍與安裝比較見[工作空間筆記](doc/notes/racket_workspace.md)。`PYTHONPATH=src:tests python tests/racket_workspace.py`採樣並按原碰撞模型過濾，目前與完整關節範圍分報；`python scripts/plot_racket_workspace.py`重畫。保留姿態／法向與潛在接觸點，未做限時接球或真機操作；更換底座XYZ需指定獨立輸出並重新檢查碰撞。
+
+[五球A組PPO探索](doc/notes/deepmind_ppo.md)已完成：固定五個DeepMind train初態、三seed各6144transitions，最後模型皆0/5有效碰拍與合法回球，訓練偶發接觸未轉成可重現回球。新增`--pace-serve-bank`接入驗證過的固定資料，`--pace-gate-dir`指定本輪來源一致的關卡；未指定bank時沿用原人工分布。manifest生成、先驗關卡、訓練與只評測命令見筆記。完整權重與原始結果留本地，`scripts/plot_deepmind_ppo.py`只讀重畫。
+
+[接觸BC初始化對照](doc/notes/deepmind_ppo.md#接觸bc初始化結果離線擬合很好閉環仍未碰球)已完成固定2000步×3seed：237筆示範的動作誤差很小，但閉環均0/5碰拍，未過事前3/5門檻，噪聲與BC＋PPO均NOT_RUN。`--mode pace-bc`收集／擬合／驗收，`--pace-actor-init`只接受三seed門檻已過的產物；本輪產物會被拒絕。完整資料流、閉環偏離量測及重跑入口見筆記；新增研究變體未更改原PACE訓練預設。
+
+追加[同球三方式慢放](doc/notes/deepmind_ppo.md#同球影片原腳本bc預算動作與bc自主控制)：seed7101在原五球上，原script與BC預算動作皆5/5碰拍，自主BC仍0/5，三者皆0合法。`tests/pace_bc_rollout.py --capture-comparison`擷取、`scripts/plot_motion_comparison.py --bc-report ... --video ... --poster ...`生成本地影片；詳細命令、結果與限制見筆記。
+
+[四組回饋診斷](doc/notes/deepmind_ppo.md#bc前動作與速度回饋診斷)已完成且不重訓：自主／前動作介入／速度介入／共同介入碰拍0／1／4／4（各5球），全部0合法；介入只改Actor觀測副本，原自主BC門檻仍FAIL。`tests/pace_bc_rollout.py --feedback-audit`擷取，`scripts/plot_deepmind_ppo.py --feedback <feedback.json>`只讀重畫；早期偏差、逐球限制與詳細入口見筆記。
+
+[偏離後接管與修正示範 BC](doc/notes/deepmind_ppo.md#偏離後接管與修正示範-bc) 在五球的三個接管時刻均恢復碰拍（15/15）。加入 452 筆實際修正樣本，三個自主 Actor 由 0/5、0/5、0/5 提高到 2/5、4/5、4/5，均無合法回球；噪聲與短 PPO 依門檻停在 NOT_RUN。當時以 `bash scripts/run_recovery_bc.sh collect <新輸出目錄>` 收集，覆蓋條件通過後以 `fit` 執行固定三 seed；這些入口要求當時來源，現版重算方式見筆記的歷史來源章節。
+
+[新7101單球接管診斷](doc/notes/deepmind_ppo.md#新7101的9378250ms接管診斷)：9378自主漏接，250ms由原腳本接管後932ms有效碰拍、仍非合法回球。無重訓，原三seed門檻不變。當時由`bash scripts/run_recovery_bc.sh probe <新輸出目錄>`執行；目前需依[歷史來源重算說明](doc/notes/deepmind_ppo.md#用歷史來源重算接管與候選-1-紀錄)恢復來源，不能直接套舊receipt。筆記含三條舊修正軌跡對照與限制。
+
+
+2026-11-24[自主修正BC與短PPO](doc/notes/deepmind_ppo.md#短ppo完成初始化已可用但原配方未保住碰拍)已完成：候選2三seed自主碰拍3/5、4/5、3/5且重載一致，通過初始化門檻。300次噪聲診斷後，各6144 transitions的PPO將最後碰拍降為1/5、0/5、1/5，合法回球全0。`tests/pace_bc_refine.py --launch --stage fit|noise`提供獨立研究入口；通過來源與三seed門檻的新版receipt可由原`--pace-actor-init`載入，PPO預設不改。完整命令、固定五train球限制、舊來源重算與全部失敗見筆記。`python scripts/plot_recovery_bc.py --refinement <ppo.json>`只讀重畫結果。

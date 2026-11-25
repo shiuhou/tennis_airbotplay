@@ -33,7 +33,7 @@
 | P1對照／後續研究 | [Sony Ace Nature論文](https://www.nature.com/articles/s41586-026-10338-5) · [官方補充 57ac16a4](https://github.com/SonyResearch/ace_public/tree/57ac16a42c25c47bde24cd2a592804f4b800085b) | Nature來源連結、倉庫目錄與資料／示意程式說明已核對；方法未完整精讀 | 資料、示意程式及影片用途分列於下節；未確認完整再利用授權，未複製資產或運行訓練。 |
 | P1／M4 | [Role of Uncertainty in Anticipatory Trajectory Prediction for a Ping-Pong Playing Robot](https://arxiv.org/abs/2312.03024) | 搜尋定位；待讀 | 擬研究預測不確定性與提前運動的取捨，不只看位置誤差。 |
 | P1／M5–M8 | [Achieving Human Level Competitive Robot Table Tennis](https://arxiv.org/abs/2408.03906) | 官方資料README已確認論文連結；方法待讀 | 擬研究分層技能、技能描述及真實來球分布。 |
-| P1／M4、M7–M8 | [Google Initial Ball States 54cf18e4](https://github.com/google-deepmind/competitive_robot_table_tennis/tree/54cf18e41a8f134d98ad38710001ed50aabb8ebc) | 固定commit、README格式與授權已核對；Notebook未執行，未匯入資料 | README記載15,792組實測初始位置／速度／旋轉；軟體Apache-2.0，其他材料CC-BY4.0。不是完整實測軌跡，MuJoCo重播不是實測真值。 |
+| P1／M4、M7–M8 | [Google Initial Ball States 54cf18e4](https://github.com/google-deepmind/competitive_robot_table_tennis/tree/54cf18e41a8f134d98ad38710001ed50aabb8ebc) | 固定原檔／README／Notebook契約與授權已核對；完成本地分布、零旋可行性審查，未接入訓練；原MuJoCo Notebook未執行 | README記載15,792組實測初始位置／速度／旋轉；軟體Apache-2.0，其他材料CC-BY4.0。不是完整實測軌跡，MuJoCo重播不是實測真值。 |
 | P1／M5、M7 | [Bridging Reinforcement Learning and Optimal Control via Feasible Action Mapping](https://arxiv.org/abs/2607.23930) | 搜尋定位；待讀 | 擬比較如何把策略動作映射成滿足約束的運動，尚未採用。 |
 | P2對照／架構比較 | [HITTER: A HumanoId Table TEnnis Robot via Hierarchical Planning and Learning](https://arxiv.org/abs/2508.21043) | 搜尋定位；待讀 | 審查建議用來研究擊球位置／速度／時間與下層執行的分工，須核對原文；不移植人形本體。 |
 | P1／M8 | [GoalsEye](https://arxiv.org/abs/2210.03662) | 團隊參考；待讀 | 目標條件化回球及迭代模仿學習，供比較規劃示範／模仿初始化；不是已採用的PPO或物理模型。 |
@@ -133,3 +133,11 @@ M6由`scripts/prepare_pace.py`按`configs/pace_sources.json`下載／校驗固�
 ### 碰撞LP數值診斷（2026-11-19）
 
 核對 [SciPy 官方 linprog／HiGHS 文件](https://docs.scipy.org/doc/scipy/reference/optimize.linprog-highs.html)：`highs`自動選擇dual simplex或IPM、預設presolve與1e-7 primal／dual可行性容差。實際容器SciPy 1.15.2；未升級或修改上游。最大共同半空間餘量是本機對等價凸包相交問題的改寫，不是官方文件提供的碰撞專用演算法；幾何、重現與限制見[M7筆記第13節](../../doc/notes/m7_notes.md)。
+
+
+2026-11-21 DeepMind審查：原始資料與SHA／Git blob由[固定來源清單](../../configs/deepmind_sources.json)保存，資料CC-BY4.0與軟體Apache2.0分開。proper座標旋轉＋桌高0.76m、raw角速度保留，物理重播明標強制零旋。15,792→814保守低旋→343目前階段相容，有限搜尋8動態接觸、0合法回球見證，不能當物理不可達證明。詳見[資料審查筆記](../../doc/notes/deepmind_feasibility.md)；原JSON不進Git，未將資料接入PPO或執行原MuJoCo訓練。
+
+
+接觸BC隔離變體（2026-11-23）：已閱讀固定fdb192f8內RSL的`algorithms/distillation.py`，確認其student/teacher與Adam/MSE資料流；它不直接支援本輪既有Actor的固定離線示範，因此不另引入StudentTeacher或其他訓練框架。沿用固定PACE ActorCritic/PPO，獨立用PyTorch Adam/MSE擬合Actor。示範來自本工程已驗的五條位置攔截腳本之PhysX重播，非Google作者的動作資料、非原M5精準回球示範；保留原始Google資料CC-BY4.0歸屬、來源commit與零旋衍生標記。
+
+2026-11-24 BC候選2直接使用[PyTorch v2.5.1官方CosineAnnealingLR](https://github.com/pytorch/pytorch/blob/v2.5.1/torch/optim/lr_scheduler.py)。官方文件站讀取403後核對固定tag原碼，執行時使用既有映像內PyTorch2.5.1；T_max=2000、eta_min=1e-5、無restart、optimizer.step後scheduler.step。不引入新依賴或更改PACE PPO排程；候選1固定lr對照與全部負結果見[五球研究筆記](../../doc/notes/deepmind_ppo.md#自主修正bc最多三個候選)。

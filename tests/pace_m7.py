@@ -166,8 +166,9 @@ def parity(env):
 def source_hashes():
     import hashlib
     from airbot_tt.config import ROOT
-    names=['src/airbot_tt/'+n+'.py' for n in ['pace_control','pace_env','runtime','ball_scene','single_shot','pace_guidance','planning','trajectory','collision']]
-    names+=['configs/'+n+'.json' for n in ['pace_rl','pace','strike','single_shot','ball','racket']]
+    names=['src/airbot_tt/'+n+'.py' for n in ['pace_serves','pace_control','pace_env','pace_predictor','runtime','ball_scene','single_shot','pace_guidance','planning','trajectory','collision']]
+    names+=['configs/'+n+'.json' for n in ['pace_rl','pace_online','pace_frozen','pace_frozen_experiment','pace_mean','pace_mean_experiment','pace_sources','pace','strike','single_shot','ball','racket']]
+    names+=['tests/pace_online.py']
     return {name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in names}
 
 

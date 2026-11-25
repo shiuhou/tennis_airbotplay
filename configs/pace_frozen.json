@@ -1,0 +1,141 @@
+{
+  "schema": "airbot-e-frozen-v1",
+  "mode": "frozen",
+  "description": "Explicit E-frozen variant: reuse the already selected M7.4E offline predictor; no new fit, online optimizer, or held-out data access.",
+  "input": {
+    "shape": [
+      5,
+      3
+    ],
+    "order": "oldest_first_xyz",
+    "frame": "local_table_ground_origin",
+    "unit": "m",
+    "policy_hz": 48,
+    "normalization": "none"
+  },
+  "output": {
+    "shape": [
+      3
+    ],
+    "meaning": "post_bounce_apex",
+    "frame": "local_table_ground_origin",
+    "unit": "m"
+  },
+  "distribution": {
+    "version": "m5-limited-high-bounce-v1",
+    "scope": "Synthetic high-bounce zero-spin development and validation; not final evaluation or measured serves",
+    "ready_q_rad": [
+      0.0,
+      -0.1,
+      0.4,
+      1.5716,
+      1.1,
+      -1.5713
+    ],
+    "velocity_limit_rad_s": 1.5,
+    "acceleration_limit_rad_s2": 8.0,
+    "simulation_speed_limit_rad_s": 2.0,
+    "reaction_delay_s": 0.05,
+    "recovery_s": 0.3,
+    "candidate_after_bounce_s": [
+      0.16,
+      0.18,
+      0.2,
+      0.22
+    ],
+    "return_flight_s": [
+      0.55,
+      0.6,
+      0.5
+    ],
+    "goals_xy_m": [
+      [
+        0.75,
+        -0.45
+      ],
+      [
+        0.75,
+        0.0
+      ],
+      [
+        0.75,
+        0.45
+      ]
+    ],
+    "goal_half_width_m": 0.2,
+    "development_seed": 501,
+    "validation_seed": 502,
+    "development_count": 3,
+    "validation_count": 12,
+    "serve_position_m": [
+      0.5,
+      0.0,
+      2.3
+    ],
+    "serve_velocity_m_s": [
+      -3.3,
+      0.0,
+      -1.4
+    ],
+    "position_half_range_m": [
+      0.0,
+      0.015,
+      0.01
+    ],
+    "velocity_half_range_m_s": [
+      0.02,
+      0.0,
+      0.01
+    ],
+    "physics_hz": 960
+  },
+  "files": {
+    "checkpoint": {
+      "path": ".agents/runs/foundation/m7/m74e/offline/predictor.pt",
+      "sha256": "7e0f666b9a50394ff43ff7226e3456f86552b9238f983b184e39c02c5a0ffec2"
+    },
+    "training": {
+      "path": ".agents/runs/foundation/m7/m74e/offline/training.json",
+      "sha256": "03e298e9420273d87e700b58164b5c256a476a98e7d8ae53ced55df3498b2ea8"
+    },
+    "validation_report": {
+      "path": ".agents/runs/foundation/m7/m74e/offline/validation.json",
+      "sha256": "c9f121259dcfe6ba6335ac5fc5776bd3421cdc353fe9361f17a701ae097e4875"
+    },
+    "dataset": {
+      "path": ".agents/runs/foundation/m7/m74e/data/dataset.json",
+      "sha256": "254dd365adeb7fa47aa520c09d27957c0e2f75d7c37f56b0255bd102dededb3a"
+    },
+    "train": {
+      "path": ".agents/runs/foundation/m7/m74e/data/train.npz",
+      "sha256": "965b33950bc58a901d9f53fcccf4580ae0151531093005ff7ff148037308ac3d"
+    },
+    "validation": {
+      "path": ".agents/runs/foundation/m7/m74e/data/validation.npz",
+      "sha256": "74f31b6941f53e196f156d56df98b0a4efab14e8041b36454c5e61e1c13f8cfa"
+    },
+    "source_snapshot": {
+      "path": ".agents/runs/foundation/m7/e_frozen/source_snapshot.json",
+      "sha256": "40556722d1aa48786e00c01311555f6ad17d2fd42d20ea128176e78d9f87f1d5"
+    }
+  },
+  "historical_source_sha256": {
+    "scripts/verify_m6.py": "1a51ab46ab154a53a8cf30a0ec3549c12e7bb063661cb1cf5b484ec34aabb379",
+    "src/airbot_tt/pace_predictor.py": "b426859ce76981da7740c0fbae1f86722e7e5fb456a9f58e7f71dedf907e47be",
+    "src/airbot_tt/pace_guidance.py": "8ff1a0a24142d08c47e560ba757a585b55f295ef876365bc54d55546a06fc401",
+    "configs/pace_sources.json": "537e4f1ae0ddb7c927274f3c6bb462f9686301fe75f2d6dccc918aec5eecb042",
+    "configs/pace.json": "7b0adce6996a69885f74a0e1c8e5a0baa8dbcf952df879294061c1ea59cd53a4",
+    "configs/ball.json": "e0a324ef77573cf7e0ff076e4ffb0ef802200b5228cf8e67c1f676798f3d72a3",
+    "configs/strike.json": "b5ab2714251abeb19b0200cddda43b4c3063a81faef143591b1be99cb7145908",
+    "tests/pace_m6.py": "82e8ea8122e130d13a79b47ef8f4266bd3f405f34ad1ab490532f5a221658901",
+    "src/airbot_tt/ball_scene.py": "830557fbc496c7005609ce6624610451709faa2d5889e544cfe7ab9977944c38"
+  },
+  "runtime_source_sha256": {
+    "configs/pace.json": "7b0adce6996a69885f74a0e1c8e5a0baa8dbcf952df879294061c1ea59cd53a4",
+    "configs/pace_sources.json": "537e4f1ae0ddb7c927274f3c6bb462f9686301fe75f2d6dccc918aec5eecb042",
+    "configs/ball.json": "e0a324ef77573cf7e0ff076e4ffb0ef802200b5228cf8e67c1f676798f3d72a3",
+    "configs/strike.json": "b5ab2714251abeb19b0200cddda43b4c3063a81faef143591b1be99cb7145908",
+    "src/airbot_tt/pace_guidance.py": "8ff1a0a24142d08c47e560ba757a585b55f295ef876365bc54d55546a06fc401"
+  },
+  "model_state_sha256": "9f5e3c9a9629ba66cfd280637752aeeb72c6fe4cfed0c9a81faacb52510fdbad"
+}
